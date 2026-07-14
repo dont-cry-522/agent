@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>yuque-agent — 知识库助手</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f5f5; color: #333; line-height: 1.6;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 20px; color: #1a1a1a; margin-bottom: 20px; }
+
+  .input-area {
+    display: flex; gap: 8px; margin-bottom: 24px;
+  }
+  .input-area input {
+    flex: 1; padding: 12px 16px; font-size: 15px; border: 1px solid #ddd;
+    border-radius: 8px; outline: none; transition: border-color .2s;
+  }
+  .input-area input:focus { border-color: #4f6ef7; }
+  .input-area button {
+    padding: 12px 24px; font-size: 15px; background: #4f6ef7; color: #fff;
+    border: none; border-radius: 8px; cursor: pointer; transition: background .2s;
+    white-space: nowrap;
+  }
+  .input-area button:hover { background: #3d5ce5; }
+  .input-area button:disabled { background: #a0a0a0; cursor: not-allowed; }
+
+  .result-section { margin-bottom: 24px; }
+  .result-section h2 {
+    font-size: 15px; color: #666; margin-bottom: 12px; padding-bottom: 8px;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .chunk-card {
+    background: #fff; border: 1px solid #e8e8e8; border-radius: 8px;
+    margin-bottom: 10px; overflow: hidden;
+  }
+  .chunk-header {
+    padding: 10px 16px; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 8px;
+    transition: background .15s;
+  }
+  .chunk-header:hover { background: #f9f9f9; }
+  .chunk-header .arrow {
+    display: inline-block; width: 14px; font-size: 11px; color: #aaa;
+    transition: transform .2s; flex-shrink: 0;
+  }
+  .chunk-header .arrow.open { transform: rotate(90deg); }
+  .chunk-header .meta {
+    font-size: 13px; color: #888;
+    display: flex; gap: 16px; flex-wrap: wrap; flex: 1; min-width: 0;
+  }
+  .chunk-header .meta .title { color: #333; font-weight: 500; }
+  .chunk-header .meta .score { color: #4f6ef7; font-weight: 600; }
+  .chunk-header .meta .bm25 { color: #e67e22; }
+  .chunk-header .meta .fusion { color: #27ae60; font-weight: 600; }
+  .chunk-header .meta .rerank { color: #8e44ad; font-weight: 600; }
+  .chunk-header .meta .path {
+    font-size: 12px; color: #aaa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .chunk-body {
+    display: none; padding: 0 16px 12px 16px;
+    font-size: 14px; color: #444; line-height: 1.7; white-space: pre-wrap;
+    border-top: 1px solid #f0f0f0;
+  }
+  .chunk-body.open { display: block; }
+
+  .answer-card {
+    background: #fff; border: 1px solid #e8e8e8; border-radius: 8px;
+    padding: 16px 20px; font-size: 15px; color: #333; white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .empty { text-align: center; color: #bbb; padding: 40px 0; font-size: 14px; }
+  .loading { text-align: center; color: #888; padding: 20px 0; }
+  .error { color: #e74c3c; font-size: 14px; padding: 8px 0; }
+
+  .toggle-wrap { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #888; white-space: nowrap; }
+  .toggle-wrap input[type=checkbox] { display: none; }
+  .toggle-wrap label { display: inline-block; width: 36px; height: 20px; border-radius: 10px; background: #ddd; cursor: pointer; position: relative; transition: background .2s; }
+  .toggle-wrap label::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .toggle-wrap input:checked + label { background: #8e44ad; }
+  .toggle-wrap input:checked + label::after { transform: translateX(16px); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>yuque-agent — 知识库助手</h1>
+
+  <div class="input-area">
+    <input id="question" type="text" placeholder="输入你的问题…" autofocus
+           onkeydown="if(event.key==='Enter')ask()">
+    <div class="toggle-wrap">
+      <input type="checkbox" id="rerankToggle" checked>
+      <label for="rerankToggle"></label>
+      Rerank
+    </div>
+    <button id="sendBtn" onclick="ask()">发送</button>
+  </div>
+
+  <div id="result"></div>
+</div>
+
+<script>
+const input = document.getElementById("question");
+const btn = document.getElementById("sendBtn");
+const result = document.getElementById("result");
+
+function ask() {
+  const q = input.value.trim();
+  if (!q) return;
+
+  input.disabled = true;
+  btn.disabled = true;
+  result.innerHTML = '<div class="loading">⏳ 正在检索并生成回答…</div>';
+
+  fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: q, rerank: document.getElementById("rerankToggle").checked }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      input.disabled = false;
+      btn.disabled = false;
+      input.focus();
+      render(data);
+    })
+    .catch(err => {
+      input.disabled = false;
+      btn.disabled = false;
+      result.innerHTML = `<div class="error">❌ 请求失败: ${err.message}</div>`;
+    });
+}
+
+function render(data) {
+  let html = "";
+
+  html += '<div class="result-section">';
+  html += '<h2>检索结果</h2>';
+  html += `<div style="font-size:13px;color:#999;margin-bottom:8px">检索耗时: ${data.retrieval_ms ?? "—"} ms</div>`;
+
+  const reranked = data.reranked || data.retrieved || [];
+  const recall = data.recall || [];
+
+  // Reranked Top 5
+  if (reranked.length > 0) {
+    reranked.forEach((r, i) => {
+      const cid = "r" + i;
+      html += `<div class="chunk-card">`;
+      html += `<div class="chunk-header" onclick="toggleChunk('${cid}',this)">`;
+      html += `<span class="arrow" id="${cid}_arrow">▶</span>`;
+      html += `<div class="meta">`;
+      html += `<span class="title">[${i + 1}] ${escapeHtml(r.title)}</span>`;
+      if (r.rerank_score > 0) {
+        html += `<span class="rerank">Rerank: ${r.rerank_score}</span>`;
+      }
+      if (r.fusion_score > 0) {
+        html += `<span class="fusion">RRF: ${r.fusion_score}</span>`;
+        html += `<span class="score">Vec: ${r.score}</span>`;
+        html += `<span class="bm25">BM25: ${r.bm25_score}</span>`;
+      } else {
+        html += `<span class="score">相似度: ${r.score}</span>`;
+      }
+      html += `</div>`;
+      html += `<span class="path">${escapeHtml(r.path)}</span>`;
+      html += `</div>`;
+      html += `<div class="chunk-body" id="${cid}_body">${escapeHtml(r.content)}</div>`;
+      html += `</div>`;
+    });
+  } else {
+    html += '<div class="empty">未找到相关参考资料</div>';
+  }
+  html += '</div>';
+
+  // Recall Top 20 (只在开启 Rerank 时显示)
+  const hasRerank = reranked.some(r => r.rerank_score > 0);
+  if (hasRerank && recall.length > 0) {
+    const rid = "recall";
+    html += '<div class="result-section">';
+    html += `<h2 style="cursor:pointer" onclick="toggleChunk('${rid}',this)">`;
+    html += `<span class="arrow" id="${rid}_arrow">▶</span>`;
+    html += ` Recall Top ${recall.length}`;
+    html += '</h2>';
+    html += `<div class="chunk-body" id="${rid}_body" style="max-height:400px;overflow-y:auto">`;
+    recall.forEach((r, i) => {
+      html += `<div style="padding:4px 0;font-size:13px;border-bottom:1px solid #f0f0f0">`;
+      html += `[${i + 1}] <b>${escapeHtml(r.title)}</b> `;
+      html += `<span style="color:#4f6ef7">Vec:${r.score}</span> `;
+      if (r.bm25_score > 0) html += `<span style="color:#e67e22">BM25:${r.bm25_score}</span> `;
+      html += `<span style="color:#27ae60">RRF:${r.fusion_score}</span>`;
+      html += `</div>`;
+    });
+    html += '</div>';
+    html += '</div>';
+  }
+
+  html += '<div class="result-section">';
+  html += '<h2>AI 回答</h2>';
+  if (data.error) {
+    html += `<div class="error">❌ ${escapeHtml(data.error)}</div>`;
+  } else if (data.answer) {
+    html += `<div class="answer-card">${escapeHtml(data.answer)}</div>`;
+  } else {
+    html += '<div class="empty">暂无回答</div>';
+  }
+  html += '</div>';
+
+  result.innerHTML = html;
+}
+
+function toggleChunk(id, header) {
+  const body = document.getElementById(id + "_body");
+  const arrow = document.getElementById(id + "_arrow");
+  if (!body || !arrow) return;
+  body.classList.toggle("open");
+  arrow.classList.toggle("open");
+}
+
+function escapeHtml(text) {
+  const d = document.createElement("div");
+  d.textContent = text;
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>

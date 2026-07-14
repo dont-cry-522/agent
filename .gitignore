@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.vscode/
+.idea/
+*.db
+*.sqlite3
+data/faiss/
+data/markdown/
+output/
+.DS_Store

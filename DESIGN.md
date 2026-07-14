@@ -1,0 +1,380 @@
+# 设计决策与优化记录
+
+本文档记录 yuque-agent 项目中所有关键设计决策的"为什么"，以及各阶段优化的前后对比。
+
+**问题索引：**
+- [Q1](#q1为什么-retriever-要独立成一个模块)：为什么 Retriever 要独立成一个模块？
+- [Q2](#q2为什么-promptbuilder-要单独封装)：为什么 PromptBuilder 要单独封装？
+- [Q3](#q3为什么-llm-不直接查-faiss)：为什么 LLM 不直接查 FAISS？
+- [Q4](#q4rag-真正增强的是-prompt-还是-llm)：RAG 真正增强的是 Prompt 还是 LLM？
+- [Q5](#q5为什么-context-不参与-embedding)：为什么 Context 不参与 Embedding？
+- [Q6](#q6为什么-context-放到-promptbuilder-再用)：为什么 Context 放到 PromptBuilder 再用？
+- [Q7](#q7为什么同样的查询每次检索延迟不一样)：为什么同样的查询每次检索延迟不一样？
+- [Phase 4.1](#phase-41chunk-上下文增强)：Chunk 上下文增强优化记录
+- [Phase 4.2](#phase-42hybrid-searchbm25--向量--rrf)：Hybrid Search 优化记录（含 3 个设计问答）
+- [Phase 4.3](#phase-43两阶段检索recall--reranking)：两阶段检索优化记录（含 3 个设计问答）
+
+---
+
+## 一、架构设计决策
+
+### Q1：为什么 Retriever 要独立成一个模块？
+
+**答案：单一职责原则。**
+
+Retriever 封装了"检索"这一完整工作单元：
+
+```
+用户问题 → Embedding → FAISS 搜索 → 返回排序结果
+```
+
+它是一个有明确边界的子系统。独立后的收益：
+
+- **可替换**：从 FAISS 换到 Milvus/Pinecone，只改这一个模块，其他代码无感知
+- **可测试**：检索命中率、召回率可独立评估，不依赖 LLM
+- **接口纯净**：上层只看到 `retrieve(query, top_k) → list[SearchResult]`
+
+反例：如果把检索逻辑写在 chat.py 里，每换一次向量库就要重写整个聊天脚本。
+
+---
+
+### Q2：为什么 PromptBuilder 要单独封装？
+
+**答案：Prompt 模板是变动最频繁的部分，应该与业务逻辑解耦。**
+
+Prompt 的迭代频率远高于其他模块。产品迭代中你会反复：
+
+- 调整措辞（"请根据参考资料回答" vs "请结合以下知识回答"）
+- 增加 few-shot 示例
+- 尝试 CoT（Chain of Thought）策略
+- 按场景切换不同模板
+
+独立后的收益：
+
+- 改模板不影响检索、LLM 调用代码
+- 可以维护多套模板（简洁版 / 详细版 / 引用版），按场景切换
+- 方便做 A/B 测试，对比不同 Prompt 的回答质量
+
+反例：如果把 Prompt 拼写死在 chat.py 里，每次调 Prompt 都要改业务逻辑代码。
+
+---
+
+### Q3：为什么 LLM 不直接查 FAISS？
+
+**答案：违反单一职责会产生强耦合，让两个模块都难以维护。**
+
+LLM 模块的职责是：调用远程 API，生成文本。它不应该知道什么是 FAISS。
+
+如果把 FAISS 查询写在 DeepSeekLLM 里：
+
+```
+DeepSeekLLM ─── 耦合 ─── FAISS
+     ↓                        ↓
+ 调用 API              向量检索
+```
+
+后果：
+
+- 换 LLM（DeepSeek → OpenAI）时，FAISS 代码也受影响
+- 换向量库（FAISS → Milvus）时，LLM 模块也要改
+- 一个模块承担了两种无关职责——既是 HTTP 客户端，又是检索引擎
+
+正确做法是在外部编排：
+
+```
+chat.py:
+  results = retriever.retrieve(question)    ← 检索
+  prompt = prompt_builder.build(question, results)  ← 拼装
+  answer = llm.chat(prompt)                 ← 生成
+```
+
+各模块各司其职，互不感知。
+
+---
+
+### Q4：RAG 真正增强的是 Prompt 还是 LLM？
+
+**答案：增强的是 Prompt，不是 LLM。**
+
+LLM 的模型权重从头到尾没有变化。RAG 的本质是：
+
+```
+用户问题 + 检索到的外部知识 → 注入 Prompt → LLM 基于上下文生成
+```
+
+这叫做 **Prompt Augmentation**（提示增强），不是模型增强。
+
+对比：
+
+| | 增强了什么 | LLM 权重是否变化 |
+|---|---|---|
+| RAG | Prompt 的内容 | 否 |
+| Fine-tuning | 模型的参数 | 是 |
+| Prompt Engineering | Prompt 的结构 | 否 |
+
+---
+
+### Q5：为什么 Context 不参与 Embedding？
+
+**答案：避免结构信息污染语义信号。**
+
+Embedding 应该捕捉"这个 Chunk 说了什么"，而不是"这个 Chunk 坐在哪"。
+
+如果把标题、前后文也 Embedding：
+
+- 同一 `## asyncio 基础` 章节下的所有 Chunk，因为都包含相同的标题文本，会被向量认为"相似"
+- 搜索"协程实现"时，整个章节的 Chunk 都会被拉到前列，而不只是真正讨论协程的那一个
+- 检索被结构信息污染——变成了"找同一章节"，而不是"找相关内容"
+
+正确做法：
+
+```
+Embedding 只看 chunk_content           ← 纯语义信号
+Context 字段存入 metadata              ← 不做向量化
+PromptBuilder 用 context 丰富 LLM 输入  ← 事后补充
+```
+
+---
+
+### Q6：为什么 Context 放到 PromptBuilder 再用？
+
+**答案：Context 是用来读懂结果的，不是用来找结果的。**
+
+检索已经找到了相关的 Chunk。此时 LLM 需要理解这个 Chunk——但 Chunk 的正文往往是零碎的。
+
+**真实案例：**
+
+检索到的 Chunk 内容是：
+> "它通过这种方式实现，避免了不必要的上下文切换..."
+
+没有 context 时，LLM 看到的是一个无主语的片段。有了 context：
+
+```
+章节: 协程实现原理
+文档: Python 异步编程指南
+前文: await 挂起当前协程，将控制权交还给事件循环
+相关内容: 它通过这种方式实现，避免了不必要的上下文切换...
+```
+
+LLM 瞬间知道：这段话的"它"指协程，"这种方式"指 `await`，"避免的"是线程切换开销。
+
+---
+
+## 二、优化对比记录
+
+### Phase 4.1：Chunk 上下文增强
+
+**改动范围**：Chunk 模型、DocumentChunker、build_index.py、SearchResult、PromptBuilder
+
+**优化前 Prompt 格式：**
+
+```
+[参考 1] 来源: 语雀 (语雀.md)
+相关内容: 公司项目 MCP 知识点 1. MCP 定义 ● 全称：Model Context Protocol...
+
+[参考 2] 来源: 语雀 (语雀.md)
+相关内容: 5. LLM 生成自然语言回复 ○ 结合工具结果生成最终回复...
+```
+
+每条参考只有来源 + 内容，LLM 不知道这段话在原文档中处于什么位置、前后文是什么。
+
+**优化后 Prompt 格式：**
+
+```
+[参考 1]
+文档: 语雀
+路径: 语雀.md
+后文: 5. LLM 生成自然语言回复 ○ 结合工具结果生成最终回复...
+相关内容: 公司项目 MCP 知识点 1. MCP 定义 ● 全称：Model Context Protocol...
+
+[参考 2]
+文档: 语雀
+路径: 语雀.md
+前文: message 喂回 LLM。5. LLM 生成自然语言回复...
+后文: ● 错误降级 ○ MCP 调用失败时，返回"查询失败"的 tool message...
+相关内容: 5. LLM 生成自然语言回复 ○ 结合工具结果生成最终回复...
+```
+
+每条参考包含：章节（如有）、文档标题、路径、前文片段、后文片段、正文。
+
+**具体改善示例：**
+
+查询 `MCP 的工具调用流程是什么`：
+
+- 优化前：参考 2 只有一段工具调用流程的描述，LLM 不知道这是流程的哪一步
+- 优化后：参考 2 带上了前文（第 4 步）和后文（Server 生命周期/错误降级），LLM 能完整理解这是"完整流程"的第 5 步
+
+查询 `FastAPI 怎么做请求验证`：
+
+- 优化前：参考 1 是 FastAPI 框架总览，参考 2 是请求验证的代码——但 LLM 不知道参考 2 在文档结构中的位置
+- 优化后：参考 2 标注了章节 `快速入门`、文档 `FastAPI框架`、前文（代码示例），LLM 能定位这是入门章节中的请求验证示例
+
+**收益总结：**
+
+| 维度 | 改善 |
+|------|------|
+| 可读性 | Chunk 从孤立的文本片段变为有上下文的完整段落 |
+| 回答质量 | LLM 能理解 Chunk 在原文中的位置和前后关联 |
+| 引用准确性 | 有文档标题和路径，LLM 可准确引用来源 |
+| 零成本 | 不增加 Embedding 计算量，不改变检索行为 |
+
+### Phase 4.2：Hybrid Search（BM25 + 向量 + RRF）
+
+**改动范围**：新增 `src/retriever/bm25.py`，重写 `src/retriever/retriever.py`，更新 `src/api/server.py`、`scripts/chat.py`、前端
+
+**新增依赖**：`rank-bm25`、`jieba`
+
+**检索流程：**
+
+```
+用户问题
+  ├─→ jieba 分词 → BM25Okapi 检索 → (metadata, bm25_score) 列表
+  └─→ BGE Embedding → FAISS 检索 → (metadata, vector_score) 列表
+                                    ↓
+                            RRF 融合（只关心排名）
+                                    ↓
+                         按 fusion_score 排序 → Top-K
+```
+
+**优化前（纯向量检索）：**
+
+查询 `FastAPI 请求验证`（Top 5）：
+```
+[1] FastAPI框架  score=0.6454  ← 正确
+[2] 语雀          score=0.5709  ← 语雀"错误降级"段落被向量误匹配
+[3] FastAPI框架  score=0.5445  ← 正确
+[4] 语雀          score=0.5296  ← 无关
+[5] 语雀          score=0.5179  ← 无关
+```
+5 个结果中 3 个不相关。向量把"请求验证"语义扩散到了语雀文档中关于"验证"、"校验"的段落。
+
+**优化后（Hybrid + RRF）（Top 3）：**
+
+```
+[1] FastAPI框架  RRF=0.0328  Vec=0.6454  BM25=7.3547  ← 最高 BM25，精确命中
+[2] FastAPI框架  RRF=0.0320  Vec=0.5445  BM25=3.7413  ← 关键词匹配
+[3] 语雀          RRF=0.0310  Vec=0.5065  BM25=0.8868  ← BM25 极低，被 RRF 压到末尾
+```
+BM25 对"请求验证"这个精确词组给了 7.35 的高分，而对语雀的无关段落只有 0.88。RRF 将 BM25 低分的 Chunk 排到后面。
+
+**查询 `为什么自研比 LangChain 更有价值`：**
+- 优化前：第 3 名包含了"LangChain"关键词最多的段落，但向量分最低
+- 优化后：该段落 BM25=6.29（最高关键词匹配），RRF 从第 3 提升到第 2
+- BM25 对专有名词"LangChain"天然高权重，纠正了向量对"框架"、"价值"等泛词的漂移
+
+**收益总结：**
+
+| 维度 | 改善 |
+|------|------|
+| 精确匹配 | 专有名词、错误码、代码片段不再被语义漂移淹没 |
+| 抗噪能力 | 无关 Chunk 的 BM25 分数极低，被 RRF 自动降权 |
+| 稳定性 | RRF 不依赖分数归一化，无超参，不同查询表现一致 |
+| 可调试 | 三列分数（Vec / BM25 / RRF）可视化，可分析两路各自贡献 |
+
+**设计决策：**
+
+为什么企业不只使用向量检索？
+- 向量擅长语义（"动物"匹配"猫"），但盲于精确（"ERR_502" ≠ "ERROR"）
+- 冷启动术语（新产品名、函数名）没有好的 Embedding
+- BM25 擅长精确匹配专有词，不懂同义词
+- 两者互补：向量保召回（recall），BM25 保精确（precision）
+
+BM25 对哪些场景更有优势？
+- 专有名词/冷启动词：产品名、函数名不依赖训练数据
+- 数字和标识符：版本号、ID、配置项，向量无法有效区分
+- 代码搜索：代码语法精确匹配比语义更可靠
+- 中文词组：jieba 分词后，"协程实现"在 BM25 中权重很高，不会漂移到"线程实现"
+
+为什么 RRF 比简单加权更稳定？
+- 向量分 [0, 1]（有界）、BM25 分 [0, ∞)（无界），无法直接相加
+- 归一化方法（min-max / z-score）对边缘值敏感，换数据集就得重调
+- RRF 只看排名位置，不看分数绝对值，天然可比
+- k=60 经验常数稳定有效，无需调参
+
+### Phase 4.3：两阶段检索（Recall + Reranking）
+
+**改动范围**：新增 `src/reranker/reranker.py`，更新 `src/api/server.py`、`scripts/chat.py`、前端
+
+**新增依赖**：无（`sentence-transformers` 自带的 `CrossEncoder`）
+
+**检索流程：**
+
+```
+用户问题
+  ↓
+Hybrid Search (Recall Top 20)
+  ↓
+BGE Reranker (Cross-encoder 精排 → Top 5)
+  ↓
+PromptBuilder → LLM
+```
+
+**收益总结：**
+
+| 维度 | 改善 |
+|------|------|
+| 精度 | Cross-encoder 联合编码 query+doc，能理解否定、转述、细微意图 |
+| 效率 | 只对 Top 20 做重排，兼顾速度和精度 |
+| 可观测 | Recall 和 Rerank 两阶段结果同时展示，可对比分析 |
+| 解耦 | Retriever 不改，Reranker 独立，换模型只改一个文件 |
+
+**设计决策：**
+
+为什么企业一般采用 Recall + Ranking 两阶段？
+- Bi-encoder（Embedding）快但粗：query 和 doc **独立编码**，点积只能捕捉表层相似
+- Cross-encoder（Reranker）慢但精：query 和 doc **联合编码**，全注意力理解复杂交互
+- 两阶段分工：Recall 从海量文档中筛 20 个候选（快），Ranking 精确排 20 → 5（精）
+- 类似 Google 搜索：倒排索引快速召回 → 复杂模型精细排序
+
+为什么 Embedding 模型不能替代 Reranker？
+- Bi-encoder 独立编码的先天局限：无法理解"这个 API **不支持**异步" vs "这个 API 支持异步"的差异
+- 点积丢失了 token 级别的交互信息，只能看到全局语义相似度
+- Cross-encoder 把 query+doc 一起送入注意力层，捕捉否定词、限定词等关键信号
+
+为什么 Reranker 只处理 Top 20？
+- 成本：Cross-encoder 推理 O(n × d²) 每对，rerank 20 对 ≈ 1 次 Embedding
+- 边际递减：Recall 第 21 名以后几乎全是噪音，重排无收益
+- 工业标准：k=20 是 Wikipedia 检索、企业 RAG 管线的经验最优值
+
+---
+
+## 二、性能与运行原理
+
+### Q7：为什么同样的查询每次检索延迟不一样？
+
+**答案：CPU 推理的非确定性。**
+
+检索延迟由三个本地操作组成：BGE 模型推理 + FAISS 搜索 + BM25 分词。理论上同样的输入应该同样的耗时，但实际上：
+
+| 因素 | 说明 |
+|------|------|
+| **CPU 频率波动** | macOS 会根据温度、负载动态调频，同样的浮点计算在不同频率下耗时不同 |
+| **其他进程争抢** | Spotlight、Time Machine、浏览器等后台任务抢占 CPU 时间片 |
+| **Python GC** | 垃圾回收触发时机不确定，偶尔暂停所有线程 |
+| **缓存冷热** | 首次查询后 CPU 缓存预热，但 L3 缓存随时可能被其他进程刷掉 |
+
+这是本机 CPU 推理的正常现象。要稳定延迟需要 GPU 推理或独占推理服务器。在千级 Chunk 的规模下，波动通常在几十毫秒内，不影响使用。
+
+---
+
+## 三、架构演进路线
+
+```
+Phase 1-3 (已完成): 基础 RAG 管道
+  knowledge/ → Chunk → Embedding → FAISS → Search
+
+Phase 4.1 (已完成): Chunk 上下文增强
+  标题解析 + 前后文摘要 + 完整路径 → Prompt 更丰富
+
+Phase 4.2 (已完成): Hybrid Search
+  BM25 + 向量 → RRF 融合 → 专有名词/精确匹配
+
+Phase 4.3 (已完成): Reranking
+  Cross-Encoder 重排 Top 20 → 回答更精准
+
+Phase 5 (待定): 质量闭环
+  RAGAS 评估 + Token 管理 + Prompt 版本管理
+
+Phase 6 (待定): 服务化
+  FastAPI + 流式输出 + 可观测性
+```

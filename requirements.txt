@@ -1,0 +1,31 @@
+# ============================================
+# 项目依赖
+# ============================================
+
+# HTTP 异步客户端（调用语雀 API）
+httpx>=0.27.0
+
+# 配置管理（从 .env 加载）
+pydantic-settings>=2.5.0
+
+# 文档处理
+markdown>=3.7.0
+
+# 文档切片（语义感知文本分割）
+langchain-text-splitters>=1.0.0
+
+# 本地 Embedding 模型
+# torch>=2.13 在 macOS arm64 上有首次推理卡顿问题，macOS 使用 2.5.x
+sentence-transformers>=3.0.0
+torch>=2.4.0; platform_system == "Windows"
+torch>=2.4.0,<2.13.0; platform_system == "Darwin"
+torch>=2.4.0; platform_system == "Linux"
+
+# 向量数据库
+faiss-cpu>=1.9.0
+
+# BM25 关键词检索
+rank-bm25>=0.2.2
+
+# 中文分词
+jieba>=0.42.1
