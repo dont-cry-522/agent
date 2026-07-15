@@ -42,7 +42,7 @@ class MarkdownImporter(BaseImporter):
                 doc = Document.from_markdown_file(filepath, self.root_dir)
                 documents.append(doc)
             except Exception as e:
-                print(f"   ⚠️  跳过无法读取的文件: {filepath} -> {e}")
+                print(f"   [WARN] 跳过无法读取的文件: {filepath} -> {e}")
 
         return documents
 

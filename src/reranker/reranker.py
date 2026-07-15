@@ -43,10 +43,10 @@ class BGEReranker:
 
     def _load_model(self) -> CrossEncoder:
         if self._model is None:
-            print(f"📥 加载 Reranker 模型: {self._model_name} ...")
+            print(f"[load] Reranker 模型: {self._model_name} ...")
             self._model = CrossEncoder(self._model_name)
             self._model.predict([("预热", "预热")])
-            print("   ✅ Reranker 加载完成")
+            print("   [OK] Reranker 加载完成")
         return self._model
 
     def rerank(

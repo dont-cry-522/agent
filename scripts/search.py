@@ -42,7 +42,7 @@ def main():
     # 1. 加载索引
     store = FAISSVectorStore(index_dir="output")
     if not store.load():
-        print("❌ 索引不存在，请先运行: python scripts/build_index.py")
+        print("[ERR] 索引不存在，请先运行: python scripts/build_index.py")
         sys.exit(1)
 
     # 2. 查询向量化
@@ -53,7 +53,7 @@ def main():
     results = store.search(query_vec, top_k=top_k)
 
     # 4. 输出
-    print(f"\n🔍 查询: \"{query}\"\n")
+    print(f"\n[search] 查询: \"{query}\"\n")
     print(f"Top-{len(results)} 最相关 Chunk:\n")
 
     for i, (meta, score) in enumerate(results):

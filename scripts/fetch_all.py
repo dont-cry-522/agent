@@ -33,13 +33,13 @@ async def fetch_and_save():
     client = YuqueClient()
 
     # 1. 验证 token
-    print("🔐 验证语雀 Token...")
+    print("[auth] 验证语雀 Token...")
     user = await client.get_user()
     print(f"   登录用户: {user.get('name')} ({user.get('login')})")
     print()
 
     # 2. 获取知识库列表
-    print("📚 获取知识库列表...")
+    print("[repo] 获取知识库列表...")
     repos = await client.list_repos()
     print(f"   共找到 {len(repos)} 个知识库")
     for r in repos:
@@ -53,7 +53,7 @@ async def fetch_and_save():
     for repo in repos:
         repo_dir = base_dir / repo.slug
         repo_dir.mkdir(parents=True, exist_ok=True)
-        print(f"📥 拉取知识库 [{repo.name}] 的文档...")
+        print(f"[load] 拉取知识库 [{repo.name}] 的文档...")
 
         offset = 0
         doc_count = 0
@@ -65,7 +65,7 @@ async def fetch_and_save():
             for s in summaries:
                 doc = await client.get_doc(repo.namespace, s.slug)
                 if not doc.body:
-                    print(f"   ⚠️  跳过空文档: {doc.title}")
+                    print(f"   [WARN]  跳过空文档: {doc.title}")
                     continue
 
                 # 保存为 Markdown 文件
@@ -78,17 +78,17 @@ async def fetch_and_save():
             if len(summaries) < 100:
                 break
 
-        print(f"   ✅ 保存 {doc_count} 篇文档 -> {repo_dir}")
+        print(f"   [OK] 保存 {doc_count} 篇文档 -> {repo_dir}")
         total_docs += doc_count
 
     print()
-    print(f"🎉 完成！共拉取 {total_docs} 篇文档")
+    print(f"[done] 完成！共拉取 {total_docs} 篇文档")
 
 
 if __name__ == "__main__":
     # 检查 .env 文件是否存在
     if not Path(".env").exists():
-        print("❌ 未找到 .env 文件，请先配置：")
+        print("[ERR] 未找到 .env 文件，请先配置：")
         print("   cp .env.example .env")
         print("   然后编辑 .env 填入你的 YUQUE_TOKEN")
         sys.exit(1)

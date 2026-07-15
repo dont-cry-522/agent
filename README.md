@@ -2,6 +2,8 @@
 
 从零自建的本地 RAG 知识库系统，让个人 Markdown 笔记变成可对话的知识库。
 
+现已升级为 **Agent Runtime**——RAG 检索管线封装为 Tool，支持 Planner → Tool → LLM 编排。
+
 ```bash
 ./start.sh
 ```
@@ -25,16 +27,17 @@ knowledge/*.md
 用户问题 ─────────────────────────────────┘
      │
      ▼
- Hybrid Search (向量 + BM25 → RRF 融合)
-     │
-     ▼
- [可选] BGE Reranker (Cross-encoder 精排)
-     │
-     ▼
- PromptBuilder (上下文拼接)
-     │
-     ▼
- DeepSeek API → 回答
+┌────── Agent Runtime ──────────────────────────────┐
+│                                                    │
+│  Memory ←→ Planner ←→ Tool(search_knowledge)       │
+│     │        │           │                         │
+│     │        │     Retriever + Reranker            │
+│     │        │     (Hybrid Search + RRF + 精排)     │
+│     │        │           │                         │
+│     └────────┴─────→ PromptBuilder                 │
+│                         │                          │
+│                    DeepSeek API → 回答              │
+└────────────────────────────────────────────────────┘
 ```
 
 ## 文档
@@ -42,7 +45,7 @@ knowledge/*.md
 | 文档 | 内容 |
 |------|------|
 | [GUIDE.md](./GUIDE.md) | 安装、配置、使用、技术栈、分数说明 |
-| [DESIGN.md](./DESIGN.md) | 设计决策（为什么这么设计）、优化前后对比 |
+| [DESIGN.md](./DESIGN.md) | 设计决策（10+ 个设计问答 + 优化对比 + Agent 设计） |
 | [SESSION.md](./SESSION.md) | 开发进度、下一任务 |
 
 ## 技术栈
@@ -54,6 +57,7 @@ knowledge/*.md
 | 关键词检索 | BM25 + jieba 分词 | 本地 |
 | 向量检索 | FAISS (IndexFlatIP) | 本地 |
 | 精排 | BAAI/bge-reranker-v2-m3 (Cross-encoder) | 本地 |
+| Agent 编排 | Tool(ABC) + Memory(ABC) + Planner(ABC) + Agent | 本地 |
 | 生成 | DeepSeek Chat API | 联网 |
 
 ## 快速开始

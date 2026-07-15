@@ -127,10 +127,14 @@ yuque-agent/
 │   │   └── reranker.py           #   Cross-encoder 精排
 │   ├── prompt/                   #   Prompt 构建器
 │   │   └── builder.py           #   可配置的 Prompt 模板
-│   ├── llm/                     #   🆕 LLM 模块（独立模块）
+│   ├── llm/                     #   LLM 模块（独立模块）
 │   │   └── deepseek.py          #   DeepSeek API 客户端
+│   ├── agent/                   #   🤖 Agent Runtime（Phase 4.5）
+│   │   ├── tool.py              #     Tool 抽象 + ToolManager + SearchKnowledgeTool
+│   │   ├── memory.py            #     Memory 抽象 + ConversationMemory
+│   │   ├── planner.py           #     Planner 抽象 + RuleBasedPlanner
+│   │   └── agent.py             #     Agent 编排（Memory → Planner → Tool → LLM）
 │   ├── yuque/                   #   语雀 API 客户端（预留）
-│   ├── agent/                   #   未来 Agent（未实现）
 │   ├── api/                     #   未来 FastAPI 服务（未实现）
 │   └── rag/                     #   未来 RAG 编排（未实现）
 ├── output/                      # 📊 构建产物

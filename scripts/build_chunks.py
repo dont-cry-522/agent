@@ -39,23 +39,23 @@ def parse_args():
 def main():
     chunk_kwargs = parse_args()
 
-    print(f"📄 Chunk 配置: size={chunk_kwargs['chunk_size']}, "
+    print(f"[file] Chunk 配置: size={chunk_kwargs['chunk_size']}, "
           f"overlap={chunk_kwargs['chunk_overlap']}")
     print()
 
     # 1. 导入 Document
     importer = MarkdownImporter(root_dir="knowledge")
     if importer.file_count == 0:
-        print("💡 knowledge/ 目录为空，请放入 .md 文件")
+        print("[tip] knowledge/ 目录为空，请放入 .md 文件")
         return
 
     documents = importer.load_documents()
-    print(f"📥 导入 {len(documents)} 篇文档")
+    print(f"[load] 导入 {len(documents)} 篇文档")
 
     # 2. 切片
     chunker = DocumentChunker(**chunk_kwargs)
     chunks = chunker.split_documents(documents)
-    print(f"✂️  切片为 {len(chunks)} 个 Chunk\n")
+    print(f"[chop]  切片为 {len(chunks)} 个 Chunk\n")
 
     # 3. 预览
     for c in chunks:
@@ -76,7 +76,7 @@ def main():
         ),
         encoding="utf-8",
     )
-    print(f"💾 已保存 {len(chunks)} 个 Chunk -> {output_path}")
+    print(f"[save] 已保存 {len(chunks)} 个 Chunk -> {output_path}")
 
 
 if __name__ == "__main__":

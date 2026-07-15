@@ -54,21 +54,21 @@ def main():
 
     # 1. 统计
     file_count = importer.file_count
-    print(f"📁 扫描目录: {root_dir.resolve()}")
-    print(f"📄 共发现 {file_count} 个 Markdown 文件\n")
+    print(f"[dir] 扫描目录: {root_dir.resolve()}")
+    print(f"[file] 共发现 {file_count} 个 Markdown 文件\n")
 
     if file_count == 0:
-        print("💡 提示：请将 .md 文件放入 knowledge/ 目录，支持子目录递归扫描")
+        print("[tip] 提示：请将 .md 文件放入 knowledge/ 目录，支持子目录递归扫描")
         return
 
     # 2. 导入
     documents = importer.load_documents()
 
     # 3. 输出统计
-    print(f"✅ 成功导入 {len(documents)} 篇文档\n")
+    print(f"[OK] 成功导入 {len(documents)} 篇文档\n")
 
     for doc in documents[:5]:  # 预览前5篇
-        print(f"   📝 {doc.title}")
+        print(f"   [doc] {doc.title}")
         print(f"      路径: {doc.path}")
         print(f"      来源: {doc.source}")
         print(f"      更新: {format_timestamp(doc.updated_at)}")
@@ -88,7 +88,7 @@ def main():
         ),
         encoding="utf-8",
     )
-    print(f"\n💾 已导出 -> {output_path}")
+    print(f"\n[save] 已导出 -> {output_path}")
 
 
 if __name__ == "__main__":

@@ -25,12 +25,12 @@ def main():
     host = "127.0.0.1"
     port = 8000
 
-    print("🚀 yuque-agent 启动中…\n")
+    print("[start] yuque-agent 启动中...\n")
 
     server = create_server(host=host, port=port)
 
     url = f"http://{host}:{port}"
-    print(f"✅ 服务已启动: {url}")
+    print(f"[OK] 服务已启动: {url}")
     print("   Ctrl+C 停止服务\n")
 
     webbrowser.open(url)
@@ -38,7 +38,7 @@ def main():
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n👋 服务已停止")
+        print("\n[bye] 服务已停止")
         server.server_close()
 
 

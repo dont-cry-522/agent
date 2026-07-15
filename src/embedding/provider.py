@@ -64,10 +64,10 @@ class BGEProvider(EmbeddingProvider):
     def _load_model(self) -> SentenceTransformer:
         """懒加载模型，首次使用时从 HuggingFace 下载，并做一次预热推理"""
         if self._model is None:
-            print(f"📥 加载 Embedding 模型: {self._model_name} ...")
+            print(f"[load] Embedding 模型: {self._model_name} ...")
             self._model = SentenceTransformer(self._model_name)
             self._model.encode("预热", normalize_embeddings=True)
-            print("   ✅ 模型加载完成")
+            print("   [OK] 模型加载完成")
         return self._model
 
     def embed_query(self, text: str) -> list[float]:

@@ -115,8 +115,8 @@ class FAISSVectorStore:
             encoding="utf-8",
         )
 
-        print(f"💾 已保存: {self._index.ntotal} 条向量 -> {self.index_path}")
-        print(f"💾 已保存: {len(self._metadata)} 条元数据 -> {self.metadata_path}")
+        print(f"[save] 已保存: {self._index.ntotal} 条向量 -> {self.index_path}")
+        print(f"[save] 已保存: {len(self._metadata)} 条元数据 -> {self.metadata_path}")
 
     def load(self) -> bool:
         """从磁盘加载 FAISS 索引和 metadata，返回是否加载成功"""
@@ -128,7 +128,7 @@ class FAISSVectorStore:
             self.metadata_path.read_text(encoding="utf-8")
         )
 
-        print(f"📂 已加载: {self._index.ntotal} 条向量 <- {self.index_path}")
+        print(f"[load] 已加载: {self._index.ntotal} 条向量 <- {self.index_path}")
         return True
 
     @property

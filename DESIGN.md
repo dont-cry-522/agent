@@ -10,9 +10,16 @@
 - [Q5](#q5为什么-context-不参与-embedding)：为什么 Context 不参与 Embedding？
 - [Q6](#q6为什么-context-放到-promptbuilder-再用)：为什么 Context 放到 PromptBuilder 再用？
 - [Q7](#q7为什么同样的查询每次检索延迟不一样)：为什么同样的查询每次检索延迟不一样？
+- [Q8](#q8为什么-tool-要抽象)：为什么 Tool 要抽象？
+- [Q9](#q9为什么-agent-不直接调用-retriever)：为什么 Agent 不直接调用 Retriever？
+- [Q10](#q10为什么-planner-要独立)：为什么 Planner 要独立？
+- [Q11](#q11为什么-planner-只看-toolmetadata-不看-tool)：为什么 Planner 只看 ToolMetadata 不看 Tool？
+- [Q12](#q12为什么-memory-要有抽象接口)：为什么 Memory 要有抽象接口？
+- [Q13](#q13为什么-observation-不在-plannertool-里)：为什么 Observation 不在 Planner/Tool 里？
 - [Phase 4.1](#phase-41chunk-上下文增强)：Chunk 上下文增强优化记录
 - [Phase 4.2](#phase-42hybrid-searchbm25--向量--rrf)：Hybrid Search 优化记录（含 3 个设计问答）
 - [Phase 4.3](#phase-43两阶段检索recall--reranking)：两阶段检索优化记录（含 3 个设计问答）
+- [Phase 4.5](#phase-45agent-runtime--从-rag-到-agent)：Agent Runtime 设计决策（含 6 个设计问答）
 
 ---
 
@@ -291,6 +298,18 @@ BM25 对哪些场景更有优势？
 - RRF 只看排名位置，不看分数绝对值，天然可比
 - k=60 经验常数稳定有效，无需调参
 
+### Phase 4.5：Agent Runtime — 从 RAG 到 Agent
+
+**改动范围**：新增 `src/agent/` 包（`tool.py`、`memory.py`、`planner.py`、`agent.py`），已有模块零修改。
+
+**设计决策：**
+- [Q8：为什么 Tool 要抽象？](#q8为什么-tool-要抽象)
+- [Q9：为什么 Agent 不直接调用 Retriever？](#q9为什么-agent-不直接调用-retriever)
+- [Q10：为什么 Planner 要独立？](#q10为什么-planner-要独立)
+- [Q11：为什么 Planner 只看 ToolMetadata 不看 Tool？](#q11为什么-planner-只看-toolmetadata-不看-tool)
+- [Q12：为什么 Memory 要有抽象接口？](#q12为什么-memory-要有抽象接口)
+- [Q13：为什么 Observation 不在 Planner/Tool 里？](#q13为什么-observation-不在-plannertool-里)
+
 ### Phase 4.3：两阶段检索（Recall + Reranking）
 
 **改动范围**：新增 `src/reranker/reranker.py`，更新 `src/api/server.py`、`scripts/chat.py`、前端
@@ -338,7 +357,124 @@ PromptBuilder → LLM
 
 ---
 
-## 二、性能与运行原理
+## 二、设计决策 — Agent 层
+
+### Q8：为什么 Tool 要抽象？
+
+**答案：和"Retriever 为什么独立"同一个道理——让上层面对统一契约。**
+
+Agent 不直接调 Retriever、不直接调 HTTP、不直接调 eval。它只看到：
+
+```python
+tool = tool_manager.get(plan.tool_name)
+result = tool.execute(**plan.tool_params)
+```
+
+如果没有 Tool 抽象，每加一个新工具（Calculator / SQL / GitHub / WebSearch），Agent 内部就要加一段 if/elif 分支处理。5 个工具 → Agent 200 行，10 个工具 → Agent 400 行。
+
+有了 Tool 抽象后，加工具只做两件事：
+1. 创建类继承 `Tool`，实现 `execute()`
+2. `tool_manager.register(tool)` 一行注册
+
+Agent 代码永不变。
+
+### Q9：为什么 Agent 不直接调用 Retriever？
+
+**答案：和你 DESIGN.md Q3 中"LLM 为什么不直接查 FAISS"是同一个原则——编排层不应该知道基础设施。**
+
+```
+# 错误做法
+Agent.run() → self.retriever.retrieve(query)  # Agent 耦合 Retriever
+
+# 正确做法
+Agent.run() → tool.execute(query)              # Agent 只知道 Tool
+                └── SearchKnowledgeTool
+                      └── self._retriever.retrieve(query)  # Tool 耦合 Retriever
+```
+
+后果对比：
+- 换向量库 FAISS → Milvus：只改 `SearchKnowledgeTool`，Agent 不变
+- 加预处理步骤（query → 改写 → 再搜 → 融合）：只改 `SearchKnowledgeTool`，Agent 不变
+- 换搜索策略（向量 → Hybrid → 多层 Rerank）：只改 `SearchKnowledgeTool`，Agent 不变
+
+Agent 的职责是编排流程（"谁先谁后"），不是搜索知识（"怎么搜"）。
+
+### Q10：为什么 Planner 要独立？
+
+**答案：决策和执行的迭代频率完全不同。**
+
+| 维度 | Planner（决策） | Agent（执行） |
+|------|----------------|--------------|
+| 变化频率 | 规则 → LLM Planner → 多步推理 → 层次规划 | 编排循环稳定后几乎不变 |
+| 测试方式 | 纯逻辑：query → Plan（无副作用） | 集成测试：需要 Memory + Tool + LLM |
+| 失败模式 | 决策错误（该搜没搜） | 执行异常（Tool 挂了） |
+
+合在一起时：
+
+```python
+Agent.run():
+    if "什么" in query:          # ← Planner 逻辑混在 Agent 里
+        result = tool.execute()  # ← 执行逻辑
+    elif len(query) > 5:
+        ...
+```
+
+升级 LLM Planner 要重写 Agent。独立后只换一行：
+
+```python
+# V1
+agent = Agent(planner=RuleBasedPlanner(), ...)
+
+# V2 — 只换 Planner
+agent = Agent(planner=LLMPlanner(llm), ...)
+```
+
+### Q11：为什么 Planner 只看 ToolMetadata 不看 Tool？
+
+**答案：ISP（接口隔离原则）——物理杜绝 Planner 意外调用工具。**
+
+`Planner.decide()` 的签名是：
+
+```python
+def decide(self, query, history, available_tools: list[ToolMetadata]) -> Plan
+```
+
+`ToolMetadata` 只有 `name` / `description` / `parameters`，没有 `execute()`。Planner 永远无法触发工具执行。
+
+`ToolManager` 返回 `list_metadata()` 给 Planner，返回 `get(name)` 给 Agent——两条通道，权限分离。
+
+### Q12：为什么 Memory 要有抽象接口？
+
+**答案：DIP（依赖倒置）——Agent 不依赖任何一种具体的记忆实现。**
+
+```python
+class Agent:
+    def __init__(self, memory: Memory, ...):  # ← 依赖 Memory(ABC)
+        self.memory = memory
+```
+
+当前 `ConversationMemory` 是滑动窗口。未来替换：
+- `SummaryMemory` → 超窗口消息自动 LLM 摘要压缩
+- `VectorMemory` → 长期重要事实存成向量，按需召回
+- `IsolatedMemory` → 多用户 Session 隔离
+
+所有替换只改注入那一行，Agent 代码不变。
+
+### Q13：为什么 Observation 不在 Planner/Tool 里？
+
+**答案：Observation 是 Agent 运行时概念，Planner 和 Tool 不应该知道它的存在。**
+
+```
+Tool 只知道: 输入(kwargs) → 输出(ToolResult)
+Planner 只知道: 状态(query, history, tools) → 决策(Plan)
+Agent 知道: Tool.execute() 的 ToolResult → 包装为 Observation → 写 Memory → 注入 Prompt
+```
+
+Observation 绑定了 Tool 输出 + 时间戳 + trace_id + 格式化文本，这是 Agent 编排层的需求。Tool 不关心 trace_id，Planner 不关心工具执行耗时——把它们塞进 Tool 或 Planner 违反 SRP。
+
+---
+
+## 三、性能与运行原理
 
 ### Q7：为什么同样的查询每次检索延迟不一样？
 
@@ -371,6 +507,10 @@ Phase 4.2 (已完成): Hybrid Search
 
 Phase 4.3 (已完成): Reranking
   Cross-Encoder 重排 Top 20 → 回答更精准
+
+Phase 4.5 (已完成): Agent Runtime
+  Tool 抽象 + Memory + Planner + Agent 编排
+  RAG 封装为 Tool，支持多工具扩展
 
 Phase 5 (待定): 质量闭环
   RAGAS 评估 + Token 管理 + Prompt 版本管理

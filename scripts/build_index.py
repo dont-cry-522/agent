@@ -35,13 +35,13 @@ def main():
 
     chunks_path = Path("output/chunks.json")
     if not chunks_path.exists():
-        print("❌ 找不到 output/chunks.json")
+        print("[ERR] 找不到 output/chunks.json")
         print("   请先运行: python scripts/build_chunks.py")
         sys.exit(1)
 
     # 1. 读取 Chunk
     chunks = json.loads(chunks_path.read_text(encoding="utf-8"))
-    print(f"📄 读取 {len(chunks)} 个 Chunk")
+    print(f"[file] 读取 {len(chunks)} 个 Chunk")
 
     # 2. 准备 texts 和 metadata
     texts = [c["chunk_content"] for c in chunks]
@@ -65,18 +65,18 @@ def main():
 
     # 3. 生成 Embedding
     provider = get_provider(provider_name)
-    print(f"🧮 使用模型: {provider_name}, 维度: {provider.dimension}")
-    print(f"🔄 正在向量化 {len(texts)} 个 Chunk ...")
+    print(f"[model] 使用模型: {provider_name}, 维度: {provider.dimension}")
+    print(f"[embed] 正在向量化 {len(texts)} 个 Chunk ...")
 
     embeddings = provider.embed_documents(texts)
-    print(f"   ✅ 完成 {len(embeddings)} 条向量")
+    print(f"   [OK] 完成 {len(embeddings)} 条向量")
 
     # 4. 构建 FAISS 索引
     store = FAISSVectorStore(index_dir="output")
     store.build(embeddings, metadata)
     store.save()
 
-    print(f"\n🎉 索引构建完成！{store.count} 条向量已入库")
+    print(f"\n[done] 索引构建完成！{store.count} 条向量已入库")
 
 
 if __name__ == "__main__":

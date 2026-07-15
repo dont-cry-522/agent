@@ -31,15 +31,15 @@ def main():
     # 1. 加载 FAISS 索引
     store = FAISSVectorStore(index_dir="output")
     if not store.load():
-        print("❌ 索引不存在，请先运行: python scripts/build_index.py")
+        print("[ERR] 索引不存在，请先运行: python scripts/build_index.py")
         sys.exit(1)
-    print(f"📂 已加载 {store.count} 条向量")
+    print(f"[load] 已加载 {store.count} 条向量")
 
     # 2.5 初始化 BM25
     metadata_path = Path("output/metadata.json")
     chunks = json.loads(metadata_path.read_text(encoding="utf-8"))
     bm25 = BM25Retriever(chunks)
-    print(f"🔤 BM25 语料库: {len(chunks)} 条文档\n")
+    print(f"[BM25] 语料库: {len(chunks)} 条文档\n")
 
     # 2. 初始化各组件
     provider = get_provider("bge")
@@ -50,7 +50,7 @@ def main():
     prompt_builder = PromptBuilder()
     llm = DeepSeekLLM()
 
-    print("💬 输入你的问题，Enter 发送（输入 q 退出）\n")
+    print("[chat] 输入你的问题，Enter 发送（输入 q 退出）\n")
 
     while True:
         try:
@@ -96,10 +96,10 @@ def main():
             answer = llm.chat(messages["system"], messages["user"])
             print(answer)
         except Exception as e:
-            print(f"❌ LLM 调用失败: {e}")
+            print(f"[ERR] LLM 调用失败: {e}")
         print()
 
-    print("👋 再见！")
+    print("[bye] 再见！")
 
 
 if __name__ == "__main__":
