@@ -143,6 +143,9 @@ function render(data) {
   html += '<div class="result-section">';
   html += '<h2>检索结果</h2>';
   html += `<div style="font-size:13px;color:#999;margin-bottom:8px">检索耗时: ${data.retrieval_ms ?? "—"} ms</div>`;
+  if (data.rewritten_query && data.rewritten_query !== data.question) {
+    html += `<div style="font-size:13px;color:#8e44ad;margin-bottom:8px">改写查询: ${escapeHtml(data.rewritten_query)}</div>`;
+  }
 
   const reranked = data.reranked || data.retrieved || [];
   const recall = data.recall || [];

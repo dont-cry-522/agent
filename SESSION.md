@@ -12,8 +12,22 @@
 | Phase 4.1 | Chunk 上下文增强（标题/前后文/路径） | ✅ |
 | Phase 4.2 | Hybrid Search（BM25 + jieba + RRF 融合） | ✅ |
 | Phase 4.3 | Cross-Encoder Reranking（Recall → Rerank 两阶段） | ✅ |
+| Phase 4.4 | Query Rewriting（LLM 查询改写，提高检索命中率） | ✅ |
+| Phase 4.4 | Query Rewriting（LLM 查询改写，提高检索命中率） | ✅ |
 | Phase 4.5 | Agent Runtime（Tool 抽象 + Memory + Planner + Agent 编排） | ✅ |
 | Phase 4.6 | Agent 接管系统入口（server.py 改为 Agent 驱动） | ✅ |
+
+### Query Rewriting 实现详情
+
+| 模块 | 文件 | 核心类 |
+|------|------|--------|
+| QueryRewriter | `src/agent/query_rewriter.py` | `QueryRewriter` |
+
+特性：
+- LLM 驱动：使用 DeepSeekLLM 将口语化问题改写为关键词查询
+- 可选注入：SearchKnowledgeTool 接受可选的 query_rewriter 参数
+- 降级保护：LLM 调用失败时自动回退使用原始查询
+- 可观测：改写后的查询记录在 ToolResult.metadata 中，前端可见
 
 ### Agent Runtime 实现详情
 
@@ -51,10 +65,9 @@
 
 ### 下一任务
 
-**Phase 4.4：查询改写（Query Rewriting）**
+**Phase 5：质量闭环（RAGAS 评估 + Token 管理 + Prompt 版本管理）**
 
 待开发清单：
-- Phase 4.4: 查询改写（用 LLM 改写用户问题，提高检索命中率）
 - Phase 5: 质量闭环（RAG 评估体系、Token 管理、Prompt 版本管理）
 - Phase 6: 服务化（FastAPI + 流式输出 + 可观测性）
 - Phase 7: LLM Planner 升级（替换 RuleBasedPlanner）
@@ -65,13 +78,19 @@
 ## 启动命令
 
 ```bash
-# macOS
-./start.sh
+# 生产模式（一键启动，前端+API 统一在 8000 端口）
+python start.py
+
+# 开发模式（前端热更新在 5173，API 在 8000）
+python start.py --dev
 
 # Windows
 start.bat
-# 或
-.venv\Scripts\activate && python scripts\start.py
+start.bat --dev
+
+# macOS / Linux
+./start.sh
+./start.sh --dev
 ```
 
 ---

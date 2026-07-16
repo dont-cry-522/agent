@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from src.agent.agent import Agent
 from src.agent.memory import ConversationMemory
 from src.agent.planner import RuleBasedPlanner
+from src.agent.query_rewriter import QueryRewriter
 from src.agent.tool import SearchKnowledgeTool, ToolManager
 from src.embedding.provider import get_provider
 from src.llm.deepseek import DeepSeekLLM
@@ -87,7 +88,7 @@ class AgentHandler(BaseHTTPRequestHandler):
         answer = self.agent.run(question)
         retrieval_ms = round((time.perf_counter() - t0) * 1000, 1)
 
-        recall_list, reranked_list = self._extract_search_results()
+        recall_list, reranked_list, rewritten_query = self._extract_search_results()
 
         self._json_response(
             200,
@@ -97,6 +98,7 @@ class AgentHandler(BaseHTTPRequestHandler):
                 "reranked": reranked_list,
                 "answer": answer,
                 "retrieval_ms": retrieval_ms,
+                "rewritten_query": rewritten_query,
                 "error": None,
             },
         )
@@ -104,23 +106,24 @@ class AgentHandler(BaseHTTPRequestHandler):
     def _extract_search_results(self):
         state = self.agent._last_state
         if state is None or not state.observations:
-            return [], []
+            return [], [], ""
 
         for obs in state.observations:
             if obs.tool_name != "search_knowledge":
                 continue
             result = obs.result
             if not result.success:
-                return [], []
+                return [], [], ""
 
             recall_raw = result.metadata.get("recall", [])
             reranked_raw = result.data if isinstance(result.data, list) else []
+            rewritten_query = result.metadata.get("rewritten_query", "")
 
             recall = [self._format_search_result(r) for r in recall_raw]
             reranked = [self._format_search_result(r) for r in reranked_raw]
-            return recall, reranked
+            return recall, reranked, rewritten_query
 
-        return [], []
+        return [], [], ""
 
     @staticmethod
     def _format_search_result(r: SearchResult) -> dict:
@@ -158,7 +161,10 @@ def create_server(host: str = "127.0.0.1", port: int = 8000) -> HTTPServer:
     reranker = BGEReranker()
     reranker._load_model()
 
-    knowledge_tool = SearchKnowledgeTool(retriever=retriever, reranker=reranker)
+    llm = DeepSeekLLM()
+    query_rewriter = QueryRewriter(llm)
+
+    knowledge_tool = SearchKnowledgeTool(retriever=retriever, reranker=reranker, query_rewriter=query_rewriter)
     tool_manager = ToolManager()
     tool_manager.register(knowledge_tool)
 
@@ -166,7 +172,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8000) -> HTTPServer:
         memory=ConversationMemory(max_messages=20),
         planner=RuleBasedPlanner(),
         tool_manager=tool_manager,
-        llm=DeepSeekLLM(),
+        llm=llm,
     )
 
     AgentHandler.agent = agent

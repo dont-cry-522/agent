@@ -131,6 +131,62 @@ class FAISSVectorStore:
         print(f"[load] 已加载: {self._index.ntotal} 条向量 <- {self.index_path}")
         return True
 
+    def add_vectors(
+        self,
+        embeddings: list[list[float]],
+        metadata: list[dict],
+    ) -> None:
+        """增量追加向量和元数据
+
+        Args:
+            embeddings: 新向量列表 [M, dim]
+            metadata:   新元数据列表 [M]
+        """
+        if not embeddings:
+            return
+        if len(embeddings) != len(metadata):
+            raise ValueError(
+                f"embeddings 数量 ({len(embeddings)}) 与 "
+                f"metadata 数量 ({len(metadata)}) 不匹配"
+            )
+
+        vectors = np.array(embeddings, dtype=np.float32)
+        self._index.add(vectors)
+        self._metadata.extend(metadata)
+
+    def rebuild_from_metadata(
+        self,
+        provider,  # EmbeddingProvider, avoid circular import
+    ) -> int:
+        """从 metadata 全量重建 FAISS 索引和向量。用于删除操作后的重建。
+
+        Returns:
+            重建后的向量总数
+        """
+        if not self._metadata:
+            self._index = None
+            return 0
+
+        texts = [m["chunk_content"] for m in self._metadata]
+        embeddings = provider.embed_documents(texts)
+        self.build(embeddings, self._metadata)
+        return self._index.ntotal
+
+    @property
+    def metadata(self) -> list[dict]:
+        """返回元数据列表（只读）"""
+        return list(self._metadata)
+
+    def remove_by_document_id(self, document_id: str) -> int:
+        """按 document_id 移除元数据（不立刻重建 FAISS，需后续调用 rebuild_from_metadata）
+
+        Returns:
+            移除的 chunk 数量
+        """
+        before = len(self._metadata)
+        self._metadata = [m for m in self._metadata if m.get("document_id") != document_id]
+        return before - len(self._metadata)
+
     @property
     def count(self) -> int:
         """返回索引中的向量总数"""

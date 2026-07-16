@@ -19,6 +19,7 @@
 - [Phase 4.1](#phase-41chunk-上下文增强)：Chunk 上下文增强优化记录
 - [Phase 4.2](#phase-42hybrid-searchbm25--向量--rrf)：Hybrid Search 优化记录（含 3 个设计问答）
 - [Phase 4.3](#phase-43两阶段检索recall--reranking)：两阶段检索优化记录（含 3 个设计问答）
+- [Phase 4.4](#phase-44query-rewriting--llm-查询改写)：Query Rewriting 设计决策
 - [Phase 4.5](#phase-45agent-runtime--从-rag-到-agent)：Agent Runtime 设计决策（含 6 个设计问答）
 
 ---
@@ -355,6 +356,56 @@ PromptBuilder → LLM
 - 边际递减：Recall 第 21 名以后几乎全是噪音，重排无收益
 - 工业标准：k=20 是 Wikipedia 检索、企业 RAG 管线的经验最优值
 
+### Phase 4.4：Query Rewriting — LLM 查询改写
+
+**改动范围**：新增 `src/agent/query_rewriter.py`，修改 `src/agent/tool.py`（SearchKnowledgeTool 新增可选 query_rewriter 参数）、`src/api/server.py`（注入 QueryRewriter）、前端（显示改写后的查询）
+
+**检索流程变化：**
+
+```
+优化前：
+  用户问题 → SearchKnowledgeTool → Retriever.retrieve(原始查询)
+
+优化后：
+  用户问题 → SearchKnowledgeTool → QueryRewriter.rewrite(原始查询)
+                                       ↓
+                                  改写查询 → Retriever.retrieve(改写查询)
+```
+
+**设计决策：**
+
+为什么改写查询而不是直接搜索原始问题？
+- 用户输入是口语化的："那个 MCP 是怎么搞的，和 REST 有啥不一样"
+- 搜索引擎需要关键词："MCP Model Context Protocol 定义 原理 REST 区别 对比"
+- LLM 擅长提取核心概念、展开缩写、补充同义词
+- Embedding 模型对口语化长句的语义编码不如关键词精准
+
+为什么 QueryRewriter 是独立模块而不是 Tool 内部逻辑？
+- SRP：查询改写是独立的 NLP 任务，和搜索执行是两个不同的关注点
+- 可替换：未来可升级为 Multi-Query Rewriter（生成多条查询并行搜索）
+- 可复用：多个 Tool 可能都需要查询改写（如 SQL 工具→改写为表名/字段名）
+- 可独立评估：改写质量可单独用 RAGAS 评估，不依赖搜索链路
+
+为什么注入到 SearchKnowledgeTool 而不是 Agent 层？
+- Agent 不知道"怎么搜"——这是 Tool 的内部优化
+- 把改写放到 Tool 里，Agent 代码一行不变
+- 符合项目"Agent 不直接调 Retriever"的设计原则——Agent 连改写都不需要知道
+
+为什么降级策略是返回原始查询？
+- LLM 可能返回空、过短、异常——此时比返回空字符串更安全的是保留原始查询
+- 用户期待的是回答，不是"改写失败"的错误信息——静默降级用户体验更好
+- 改写失败时搜索结果略差于改写成功，但远好于搜索失败
+
+**收益总结：**
+
+| 维度 | 改善 |
+|------|------|
+| 命中率 | 关键词查询比口语问题在 BM25 中的词频匹配更精准 |
+| 召回率 | 展开缩写和同义词让向量检索覆盖更多相关 Chunk |
+| 零改动 | Agent / Planner / Memory 不需任何修改 |
+| 降级安全 | LLM 改写失败自动回退原始查询，不影响可用性 |
+| 可观测 | 改写后的查询显示在前端，用户可验证改写质量 |
+
 ---
 
 ## 二、设计决策 — Agent 层
@@ -507,6 +558,9 @@ Phase 4.2 (已完成): Hybrid Search
 
 Phase 4.3 (已完成): Reranking
   Cross-Encoder 重排 Top 20 → 回答更精准
+
+Phase 4.4 (已完成): Query Rewriting
+  LLM 改写用户查询 → 关键词优化 → 检索命中率提升
 
 Phase 4.5 (已完成): Agent Runtime
   Tool 抽象 + Memory + Planner + Agent 编排

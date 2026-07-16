@@ -328,9 +328,10 @@ class SearchKnowledgeTool(Tool):
         "required": ["query"],
     }
 
-    def __init__(self, retriever: Retriever, reranker=None):
+    def __init__(self, retriever: Retriever, reranker=None, query_rewriter=None):
         self._retriever = retriever
         self._reranker = reranker
+        self._query_rewriter = query_rewriter
 
     @property
     def name(self) -> str:
@@ -362,11 +363,18 @@ class SearchKnowledgeTool(Tool):
 
         start = time.perf_counter()
 
+        rewritten_query = query
+        if self._query_rewriter is not None:
+            try:
+                rewritten_query = self._query_rewriter.rewrite(query)
+            except Exception:
+                rewritten_query = query
+
         try:
-            candidates = self._retriever.retrieve(query, top_k=max(top_k, 20))
+            candidates = self._retriever.retrieve(rewritten_query, top_k=max(top_k, 20))
 
             if self._reranker is not None and candidates:
-                results = self._reranker.rerank(query, candidates, top_k=top_k)
+                results = self._reranker.rerank(rewritten_query, candidates, top_k=top_k)
             else:
                 results = candidates[:top_k]
 
@@ -382,6 +390,8 @@ class SearchKnowledgeTool(Tool):
                     "rerank_applied": self._reranker is not None,
                     "num_candidates": len(candidates),
                     "recall": candidates,
+                    "original_query": query,
+                    "rewritten_query": rewritten_query,
                 },
             )
 

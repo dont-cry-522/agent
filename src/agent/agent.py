@@ -193,6 +193,67 @@ class Agent:
         state.status = "DONE"
         return answer
 
+    def run_stream(self, query: str):
+        """流式 Agent 执行：Planner → Tool → LLM (stream)，逐 token 产出
+
+        Yields:
+            {"type": "thinking", "content": "..."}
+            {"type": "token", "content": "..."}
+            {"type": "finish", "usage": {...}}
+            {"type": "error", "message": "..."}
+        """
+        self._last_state = AgentState()
+        state = self._last_state
+        state.status = "THINKING"
+        yield {"type": "thinking", "content": "正在分析问题..."}
+
+        self.memory.add("user", query)
+
+        # ── Planner 循环 ──
+
+        while state.iteration < state.max_iterations:
+            plan = self.planner.decide(
+                query=query,
+                history=self.memory.get_messages(),
+                available_tools=self.tool_manager.list_metadata(),
+            )
+
+            if plan.should_respond:
+                break
+
+            yield {"type": "thinking", "content": "正在检索知识库..."}
+            self._execute_tool(plan, state)
+
+        # ── 构建 Prompt ──
+
+        system, user_message = self._build_prompt(query, state)
+        state.status = "RESPONDING"
+
+        # ── LLM 流式生成 ──
+
+        full_answer = ""
+        try:
+            for event in self.llm.chat_stream(system_prompt=system, user_message=user_message):
+                if event["type"] == "token":
+                    full_answer += event["content"]
+                    yield event
+                elif event["type"] == "finish":
+                    state.status = "DONE"
+                    yield event
+                elif event["type"] == "error":
+                    state.status = "ERROR"
+                    state.error = event["message"]
+                    yield {"type": "error", "message": f"生成回答时出错：{event['message']}"}
+                    return
+        except Exception as exc:
+            state.status = "ERROR"
+            state.error = str(exc)
+            yield {"type": "error", "message": f"抱歉，生成回答时出错：{exc}"}
+            return
+
+        self.memory.add("assistant", full_answer)
+        state.status = "DONE"
+
     # ── Tool 执行 ────────────────────────────
 
     def _execute_tool(self, plan: Plan, state: AgentState) -> None:

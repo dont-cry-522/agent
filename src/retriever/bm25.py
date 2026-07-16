@@ -60,3 +60,13 @@ class BM25Retriever:
             else:
                 result.extend(word.split())
         return [t for t in result if t]
+
+    def rebuild(self, chunks: list[dict]) -> None:
+        """从 chunk 列表全量重建 BM25 语料库"""
+        self._chunks = chunks
+        self._corpus_tokens = [self._tokenize(c["chunk_content"]) for c in chunks]
+        self._bm25 = BM25Okapi(self._corpus_tokens) if self._corpus_tokens else None
+
+    @property
+    def chunk_count(self) -> int:
+        return len(self._chunks)

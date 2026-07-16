@@ -29,3 +29,9 @@ rank-bm25>=0.2.2
 
 # 中文分词
 jieba>=0.42.1
+
+# Web 服务（FastAPI）
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-multipart>=0.0.20
+gunicorn>=23.0.0
