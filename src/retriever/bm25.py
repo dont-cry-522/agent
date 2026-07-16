@@ -30,13 +30,26 @@ class BM25Retriever:
         """
         self._chunks = chunks
         self._corpus_tokens = [self._tokenize(c["chunk_content"]) for c in chunks]
-        self._bm25 = BM25Okapi(self._corpus_tokens) if self._corpus_tokens else None
+        self._bm25 = self._build_bm25()
+
+    def _build_bm25(self):
+        """构建 BM25 索引，空语料时返回 None"""
+        valid = [tokens for tokens in self._corpus_tokens if tokens]
+        if not valid:
+            return None
+        try:
+            return BM25Okapi(self._corpus_tokens)
+        except (ValueError, ZeroDivisionError):
+            return None
 
     def search(self, query: str, top_k: int = 5) -> list[tuple[dict, float]]:
         if self._bm25 is None:
             return []
 
         query_tokens = self._tokenize(query)
+        if not query_tokens:
+            return []
+
         scores = self._bm25.get_scores(query_tokens)
 
         ranked = sorted(
@@ -49,6 +62,8 @@ class BM25Retriever:
 
     @staticmethod
     def _tokenize(text: str) -> list[str]:
+        if not text.strip():
+            return []
         chinese_words = list(jieba.cut(text))
         result = []
         for word in chinese_words:
@@ -65,7 +80,7 @@ class BM25Retriever:
         """从 chunk 列表全量重建 BM25 语料库"""
         self._chunks = chunks
         self._corpus_tokens = [self._tokenize(c["chunk_content"]) for c in chunks]
-        self._bm25 = BM25Okapi(self._corpus_tokens) if self._corpus_tokens else None
+        self._bm25 = self._build_bm25()
 
     @property
     def chunk_count(self) -> int:
