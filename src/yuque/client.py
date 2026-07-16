@@ -60,7 +60,7 @@ class YuqueClient:
         self._headers = {
             "X-Auth-Token": self.token,
             "Content-Type": "application/json",
-            "User-Agent": "yuque-agent/1.0",
+            "User-Agent": "DocAgent/2.0",
         }
 
     # ── 内部工具方法 ─────────────────────────────

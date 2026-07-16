@@ -1,6 +1,6 @@
 ---
 name: rag-design
-description: Use ONLY when adding new features to the yuque-agent RAG project. Enforces design-first methodology — explain why before coding, test with real queries, document before/after differences.
+description: Use ONLY when adding new features to the DocAgent RAG project. Enforces design-first methodology — explain why before coding, test with real queries, document before/after differences.
 ---
 
 # RAG Design Thinking

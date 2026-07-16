@@ -1,4 +1,4 @@
-# yuque-agent
+# DocAgent
 
 从零自建的本地 RAG 知识库系统，让个人 Markdown 笔记变成可对话的知识库。
 

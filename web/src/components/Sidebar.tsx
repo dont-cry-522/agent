@@ -88,7 +88,7 @@ export default function Sidebar({ onNewChat, currentPage, onNavigate }: SidebarP
 
       <div className="p-3 border-t border-gray-100">
         <p className="text-sm text-gray-400 text-center">
-          yuque-agent
+          DocAgent
         </p>
       </div>
     </aside>

@@ -29,9 +29,9 @@ python start.py --dev    # 开发模式（热更新）
 ```bash
 git init
 git add .
-git commit -m "yuque-agent v2"
+git commit -m "DocAgent v2"
 git branch -M main
-git remote add origin https://github.com/你的用户名/yuque-agent.git
+git remote add origin https://github.com/你的用户名/DocAgent.git
 git push -u origin main
 ```
 
@@ -44,7 +44,7 @@ git push -u origin main
 
 | 配置项 | 值 |
 |--------|-----|
-| Name | `yuque-agent` |
+| Name | `DocAgent` |
 | Runtime | Docker |
 | Instance | Free |
 
@@ -59,7 +59,7 @@ Environment Variables：
 
 ### 4. 部署
 
-点击 **Deploy Web Service**。等待 5-10 分钟，你会得到一个 `https://yuque-agent.onrender.com` 地址。
+点击 **Deploy Web Service**。等待 5-10 分钟，你会得到一个 `https://docagent.onrender.com` 地址。
 
 ### 5. 使用
 
@@ -71,7 +71,7 @@ Environment Variables：
 
 ```bash
 # 构建
-docker build -t yuque-agent .
+docker build -t docagent .
 
 # 运行
 docker run -p 8000:8000 \
@@ -79,7 +79,7 @@ docker run -p 8000:8000 \
   -e DISABLE_RERANKER=1 \
   -v $(pwd)/output:/app/output \
   -v $(pwd)/uploads:/app/uploads \
-  yuque-agent
+  docagent
 ```
 
 ---

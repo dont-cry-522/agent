@@ -120,7 +120,7 @@ async def lifespan(app: FastAPI):
     print("[shutdown] 服务关闭")
 
 
-app = FastAPI(title="yuque-agent", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="DocAgent", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

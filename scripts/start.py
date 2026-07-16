@@ -25,7 +25,7 @@ def main():
     host = "127.0.0.1"
     port = 8000
 
-    print("[start] yuque-agent 启动中...\n")
+    print("[start] DocAgent 启动中...\n")
 
     server = create_server(host=host, port=port)
 

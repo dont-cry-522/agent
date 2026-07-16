@@ -1,6 +1,6 @@
 """
-yuque-agent 一键启动
-===================
+DocAgent 一键启动
+==================
 
 用法：
     python start.py          生产模式：构建前端 + 启动服务
@@ -73,7 +73,7 @@ def start_dev():
 
 
 def start_prod():
-    print("[start] yuque-agent 启动中...\n")
+    print("[start] DocAgent 启动中...\n")
     check_index()
 
     if not (WEB_DIR / "dist" / "index.html").exists():

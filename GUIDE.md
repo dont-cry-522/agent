@@ -1,4 +1,4 @@
-# yuque-agent — 本地 RAG 知识库系统
+# DocAgent — 本地 RAG 知识库系统
 
 ## 项目概述
 
@@ -96,7 +96,7 @@ sequenceDiagram
 ## 项目架构
 
 ```
-yuque-agent/
+DocAgent/
 ├── knowledge/                   # 📄 知识文档来源（.md 文件）
 ├── scripts/                     # 🖥  入口脚本
 │   ├── import_markdown.py       #   步骤 1：扫描 knowledge/ → documents.json
@@ -181,7 +181,7 @@ brew install python@3.11
 #### 2. 创建虚拟环境
 
 ```bash
-cd /path/to/yuque-agent
+cd /path/to/DocAgent
 python3.11 -m venv .venv
 source .venv/bin/activate
 ```
@@ -212,7 +212,7 @@ pip --version
 #### 2. 创建虚拟环境
 
 ```powershell
-cd C:\path\to\yuque-agent
+cd C:\path\to\DocAgent
 python -m venv .venv
 .venv\Scripts\activate
 ```

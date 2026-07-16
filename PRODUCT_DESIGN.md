@@ -1,4 +1,4 @@
-# yuque-agent: Enterprise Knowledge Agent
+# DocAgent: Enterprise Knowledge Agent
 
 ## 产品设计文档 v1.0
 
@@ -15,7 +15,7 @@
 
 与竞品的差异化：
 
-| | yuque-agent | NotebookLM | Perplexity | ChatGPT Projects |
+| | DocAgent | NotebookLM | Perplexity | ChatGPT Projects |
 |---|---|---|---|---|
 | 部署方式 | 本地 / 自托管 | 云端 | 云端 | 云端 |
 | 数据隐私 | 完全本地，不上传 | 上传 Google | 上传 | 上传 |
@@ -839,7 +839,7 @@ LLM 返回文本： "MCP 是一个开放协议 [1]，它定义了..."
 ## 12. 项目目录结构
 
 ```
-yuque-agent/
+DocAgent/
 │
 ├── agent/                          # Agent Runtime（从 src/agent/ 迁出）
 │   ├── __init__.py
