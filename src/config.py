@@ -12,8 +12,12 @@ class Settings(BaseSettings):
     """应用全局配置，所有配置项从环境变量或 .env 文件加载"""
 
     # ── 语雀 API ──────────────────────────────
-    yuque_token: str = Field(..., alias="YUQUE_TOKEN")
-    yuque_namespace: str = Field(..., alias="YUQUE_NAMESPACE")
+    yuque_token: str = Field(
+        default="", alias="YUQUE_TOKEN"
+    )
+    yuque_namespace: str = Field(
+        default="", alias="YUQUE_NAMESPACE"
+    )
     yuque_base_url: str = Field(
         default="https://www.yuque.com/api/v2", alias="YUQUE_BASE_URL"
     )
