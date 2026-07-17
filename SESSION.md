@@ -1,5 +1,41 @@
 # Session State — 2026-07-17
 
+## 恢复工作
+
+关闭终端后，下次恢复只需：
+
+```powershell
+cd E:\yuque-agent
+.venv\Scripts\activate
+python start.py
+```
+
+所有数据（对话历史、文档索引、上传文件）都在本地，启动即用。
+
+## 当前功能完整度：19/19 ✅
+
+| # | 功能 | 状态 |
+|---|------|------|
+| 1 | 上传文档（md/pdf/docx/txt/html） | ✅ |
+| 2 | 文档管理（列表/删除/统计） | ✅ |
+| 3 | Chunk 语义切片 + 上下文增强 | ✅ |
+| 4 | BGE Embedding 向量化 | ✅ |
+| 5 | FAISS 向量索引（IndexIDMap） | ✅ |
+| 6 | Hybrid Search（FAISS + BM25 + RRF） | ✅ |
+| 7 | Reranker 精排 | ✅ |
+| 8 | Citation [1][2] 行内引用 | ✅ |
+| 9 | 多轮对话（Memory + 持久化） | ✅ |
+| 10 | Conversation 管理（创建/切换/删除） | ✅ |
+| 11 | Agent Runtime（Tool/Memory/Planner） | ✅ |
+| 12 | Query Rewriting | ✅ |
+| 13 | 流式回答（SSE） | ✅ |
+| 14 | 增量索引（hash 去重） | ✅ |
+| 15 | FastAPI 14 个端点 | ✅ |
+| 16 | React 19 + TypeScript 前端 | ✅ |
+| 17 | SQLite 持久化 + 自动迁移 | ✅ |
+| 18 | Docker 部署 | ✅ |
+| 19 | HuggingFace 镜像 | ✅ |
+
 ## 今日进度
 
 | 阶段 | 内容 | 状态 |

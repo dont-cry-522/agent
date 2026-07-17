@@ -64,28 +64,16 @@
 ## 快速开始
 
 ```bash
-# 1. 安装依赖
+# 安装（仅首次）
 pip install -r requirements.txt
+cp .env.example .env  # 编辑填入 DEEPSEEK_API_KEY
 
-# 2. 配置 API Key
-cp .env.example .env
-# 编辑 .env，填入 DEEPSEEK_API_KEY
-
-# 3. 准备知识文档（可选，也可启动后通过页面上传）
-mkdir knowledge
-cp your-docs/*.md knowledge/
-
-# 4. 构建索引（可选，也可启动后通过页面上传）
-python scripts/import_markdown.py
-python scripts/build_chunks.py
-python scripts/build_index.py
-
-# 5. 启动
+# 启动（每次使用只需这一条）
 python start.py
 # 浏览器打开 http://127.0.0.1:8000
 ```
 
-> 首次运行需下载 Embedding 模型 (~100MB)，之后直接启动。国内自动使用 hf-mirror.com 镜像。
+> 所有数据本地存储，关闭后重启不丢失：对话历史在 `data/docagent.db`，索此在 `output/`，上传文件在 `uploads/`。
 
 ## 开发模式
 
