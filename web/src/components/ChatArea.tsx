@@ -74,7 +74,7 @@ export default function ChatArea({ conversationId }: ChatAreaProps) {
 
   const handleSend = useCallback(async (text?: string) => {
     const q = (text || input).trim()
-    if (!q || status !== 'idle') return
+    if (!q || (status !== 'idle' && status !== 'done')) return
 
     const userMsg: Message = {
       id: Date.now().toString(),

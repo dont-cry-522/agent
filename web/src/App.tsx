@@ -9,11 +9,13 @@ export default function App() {
   const [page, setPage] = useState<Page>('chat')
   const [currentConvId, setCurrentConvId] = useState('')
   const [chatKey, setChatKey] = useState(0)
+  const [convRefresh, setConvRefresh] = useState(0)
 
   const handleNewChat = () => {
     setPage('chat')
     setCurrentConvId('')
     setChatKey((k) => k + 1)
+    setConvRefresh((k) => k + 1)
   }
 
   const handleSelectConversation = (id: string) => {
@@ -30,6 +32,7 @@ export default function App() {
         currentConvId={currentConvId}
         currentPage={page}
         onNavigate={setPage}
+        refreshKey={convRefresh}
       />
       {page === 'chat' ? (
         <ChatArea key={chatKey} conversationId={currentConvId} />

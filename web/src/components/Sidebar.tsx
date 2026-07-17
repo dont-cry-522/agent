@@ -10,10 +10,11 @@ interface SidebarProps {
   currentConvId: string
   currentPage: Page
   onNavigate: (page: Page) => void
+  refreshKey: number
 }
 
 export default function Sidebar({
-  onNewChat, onSelectConversation, currentConvId, currentPage, onNavigate,
+  onNewChat, onSelectConversation, currentConvId, currentPage, onNavigate, refreshKey,
 }: SidebarProps) {
   const [documents, setDocuments] = useState<DocumentItem[]>([])
   const [conversations, setConversations] = useState<ConversationItem[]>([])
@@ -28,7 +29,7 @@ export default function Sidebar({
   useEffect(() => {
     listDocuments().then(setDocuments).catch(() => {})
     loadConversations()
-  }, [loadConversations])
+  }, [loadConversations, refreshKey])
 
   useEffect(() => {
     if (currentPage === 'documents') {
