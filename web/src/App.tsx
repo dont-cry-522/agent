@@ -12,7 +12,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const sidebar = useResizable({ initialSize: 288, minSize: 200, maxSize: 400 })
-  const citations = useResizable({ initialSize: 320, minSize: 240, maxSize: 500 })
+  const citations = useResizable({ initialSize: 320, minSize: 240, maxSize: 500, reverse: true })
 
   const handleNewChat = () => {
     setPage('chat')

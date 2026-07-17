@@ -4,9 +4,10 @@ interface UseResizableOptions {
   initialSize: number
   minSize: number
   maxSize: number
+  reverse?: boolean
 }
 
-export function useResizable({ initialSize, minSize, maxSize }: UseResizableOptions) {
+export function useResizable({ initialSize, minSize, maxSize, reverse }: UseResizableOptions) {
   const [size, setSize] = useState(initialSize)
   const dragging = useRef(false)
   const startX = useRef(0)
@@ -24,7 +25,8 @@ export function useResizable({ initialSize, minSize, maxSize }: UseResizableOpti
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       if (!dragging.current) return
-      const delta = e.clientX - startX.current
+      const rawDelta = e.clientX - startX.current
+      const delta = reverse ? -rawDelta : rawDelta
       const newSize = Math.min(maxSize, Math.max(minSize, startSize.current + delta))
       setSize(newSize)
     }
@@ -39,7 +41,7 @@ export function useResizable({ initialSize, minSize, maxSize }: UseResizableOpti
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup', onMouseUp)
     }
-  }, [maxSize, minSize])
+  }, [maxSize, minSize, reverse])
 
   return { size, onMouseDown }
 }
