@@ -7,11 +7,12 @@ DocumentManager — 文档生命周期管理
 
 支持格式: .md .txt .pdf .docx .html
 
-元数据通过 DocumentRepository 持久化到 SQLite，不再使用 JSON 文件。
+增量更新：通过 SHA256 hash 去重 + IndexIDMap 增量删除，单文档修改不重建全部索引。
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -105,9 +106,23 @@ class DocumentManager:
 
     def upload(self, file_bytes: bytes, filename: str) -> DocRecord:
         safe_name = self._sanitize_filename(filename)
-        doc_id = uuid.uuid4().hex[:12]
         ext = Path(filename).suffix.lower().lstrip(".")
+        content_hash = self._compute_hash(file_bytes)
 
+        # 检查是否存在同名文档
+        existing = self._find_by_name(filename)
+        if existing and existing.get("content_hash") == content_hash:
+            return DocRecord(**existing)
+
+        # 如果同名但 hash 不同 → 先删旧的
+        if existing:
+            old_id = existing["id"]
+            self._store.remove_by_document_id(old_id)
+            old_file = UPLOADS_DIR / existing.get("filename", "")
+            if old_file.exists():
+                old_file.unlink()
+
+        doc_id = uuid.uuid4().hex[:12]
         upload_path = UPLOADS_DIR / f"{doc_id}_{safe_name}"
         upload_path.write_bytes(file_bytes)
 
@@ -154,7 +169,7 @@ class DocumentManager:
             file_size=len(file_bytes),
             chunk_count=len(chunks),
         )
-        self._persist_record(record)
+        self._persist_record(record, content_hash)
         return record
 
     # ── 文档列表 ──────────────────────────────
@@ -187,7 +202,7 @@ class DocumentManager:
     # ── 删除文档 ──────────────────────────────
 
     def delete(self, doc_id: str) -> bool:
-        target = None
+        target_filename = None
         if self._get_session is not None:
             try:
                 from storage.repository import DocumentRepository
@@ -195,28 +210,29 @@ class DocumentManager:
                 with self._get_session() as s:
                     db_doc = repo.get_by_id(s, doc_id)
                     if db_doc:
-                        target = db_doc.filename
+                        target_filename = db_doc.filename
                         repo.delete(s, doc_id)
             except Exception:
                 pass
 
-        if target:
-            file_path = UPLOADS_DIR / target
+        if target_filename:
+            file_path = UPLOADS_DIR / target_filename
             if file_path.exists():
                 file_path.unlink()
         else:
             for f in UPLOADS_DIR.iterdir():
                 if f.name.startswith(doc_id + "_"):
-                    target = f.name
+                    target_filename = f.name
                     f.unlink()
                     break
-            if not target:
+            if not target_filename:
                 return False
 
+        # 增量删除：从 FAISS 移除指定 document 的向量
         removed = self._store.remove_by_document_id(doc_id)
         if removed > 0:
-            self._store.rebuild_from_metadata(self._provider)
             self._store.save()
+            # compact metadata → 重建 BM25
             self._bm25.rebuild(self._store.metadata)
         return True
 
@@ -323,23 +339,66 @@ class DocumentManager:
     def _sanitize_filename(name: str) -> str:
         return Path(name).name
 
-    def _persist_record(self, record: DocRecord) -> None:
+    @staticmethod
+    def _compute_hash(data: bytes) -> str:
+        return hashlib.sha256(data).hexdigest()
+
+    def _find_by_name(self, original_name: str) -> dict | None:
+        if self._get_session is None:
+            return None
+        try:
+            from storage.repository import DocumentRepository
+            repo = DocumentRepository()
+            with self._get_session() as s:
+                for doc in repo.list_all(s):
+                    if doc.original_name == original_name:
+                        return {
+                            "id": doc.id,
+                            "filename": doc.filename,
+                            "original_name": doc.original_name,
+                            "format": doc.format,
+                            "file_size": doc.file_size,
+                            "chunk_count": doc.chunk_count,
+                            "status": doc.status,
+                            "error": doc.error,
+                            "content_hash": doc.content_hash,
+                            "created_at": doc.created_at.strftime("%Y-%m-%d %H:%M:%S") if doc.created_at else "",
+                        }
+        except Exception:
+            pass
+        return None
+
+    def _persist_record(self, record: DocRecord, content_hash: str = "") -> None:
         if self._get_session is None:
             return
         try:
             from storage.repository import DocumentRepository
             repo = DocumentRepository()
             with self._get_session() as s:
-                repo.create(
-                    s,
-                    id=record.id,
-                    filename=record.filename,
-                    original_name=record.original_name,
-                    format=record.format,
-                    file_size=record.file_size,
-                    chunk_count=record.chunk_count,
-                    status=record.status,
-                    error=record.error,
-                )
+                # 删除旧记录（如果同名更新）
+                for doc in repo.list_all(s):
+                    if doc.original_name == record.original_name and doc.id != record.id:
+                        repo.delete(s, doc.id)
+
+                existing = repo.get_by_id(s, record.id)
+                if existing:
+                    repo.update(s, record.id,
+                        chunk_count=record.chunk_count,
+                        file_size=record.file_size,
+                        content_hash=content_hash,
+                        status=record.status)
+                else:
+                    repo.create(
+                        s,
+                        id=record.id,
+                        filename=record.filename,
+                        original_name=record.original_name,
+                        format=record.format,
+                        file_size=record.file_size,
+                        chunk_count=record.chunk_count,
+                        status=record.status,
+                        error=record.error,
+                        content_hash=content_hash,
+                    )
         except Exception as e:
             print(f"[doc] 持久化记录失败: {e}")

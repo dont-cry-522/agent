@@ -119,6 +119,9 @@ class DocumentRecord(Base):
     error: Mapped[str] = mapped_column(
         Text, nullable=False, default=""
     )
+    content_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

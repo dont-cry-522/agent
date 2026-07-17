@@ -188,6 +188,7 @@ class DocumentRepository:
         chunk_count: int = 0,
         status: str = "ready",
         error: str = "",
+        content_hash: str | None = None,
     ) -> DocumentRecord:
         doc = DocumentRecord(
             id=id,
@@ -198,6 +199,7 @@ class DocumentRepository:
             chunk_count=chunk_count,
             status=status,
             error=error,
+            content_hash=content_hash,
         )
         session.add(doc)
         session.commit()
