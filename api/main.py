@@ -17,17 +17,21 @@ Agent Runtime 不变：所有核心逻辑复用现有模块。
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+# 必须在任何 HuggingFace 相关 import 之前设置镜像
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.config import settings
+os.environ.setdefault("HF_ENDPOINT", settings.hf_endpoint)
+
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from api.document_manager import DocumentManager
 from api.schemas import (
