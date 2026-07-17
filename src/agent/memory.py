@@ -123,6 +123,122 @@ class ConversationMemory(Memory):
         return f"ConversationMemory(messages={len(self._messages)}/{self._max_messages})"
 
 
+# ── 持久化短期记忆 ───────────────────────────────
+#
+# 设计理由：ConversationMemory + SQLite 持久化。
+#   行为完全兼容 ConversationMemory——Agent / Planner / Tool 无需任何改动。
+#   持久化仅在 add() 时发生，get_messages() 纯内存操作，不查数据库。
+#
+# 和 ConversationMemory 的差异：
+#   1. 构造时需要 conversation_id（绑定到一条对话）
+#   2. add() 时额外写一条到 SQLite（通过 MessageRepository）
+#   3. __init__ 时从数据库加载最近 N 条到内存（恢复历史上下文）
+#   4. clear() 只清内存窗口，不删数据库（对话历史保留）
+#
+# 注入方式（Agent 一行不改）：
+#   agent = Agent(memory=PersistentConversationMemory(
+#       conversation_id="abc123",
+#       get_session=get_session,
+#   ))
+
+class PersistentConversationMemory(Memory):
+    """滑动窗口 + SQLite 持久化的短期记忆
+
+    Attributes:
+        conversation_id:  绑定的对话 ID
+        _messages:        内存窗口（最近 max_messages 条）
+        _max_messages:    窗口上限
+        _persisted_count: 已持久化到 DB 的消息数（防止重复写入）
+    """
+
+    def __init__(
+        self,
+        conversation_id: str,
+        get_session=None,  # callable → Session
+        max_messages: int = 20,
+    ):
+        self.conversation_id = conversation_id
+        self._get_session = get_session
+        self._messages: list[Message] = []
+        self._max_messages = max_messages
+        self._persisted_count = 0
+
+        self._load_history()
+
+    # ── Memory 接口实现 ──
+
+    def add(self, role: str, content: str) -> Message:
+        msg = Message(role=role, content=content)
+        self._messages.append(msg)
+        self._trim()
+        self._persist(msg)
+        return msg
+
+    def get_messages(self) -> list[Message]:
+        return list(self._messages)
+
+    def clear(self) -> None:
+        self._messages.clear()
+
+    def summary(self) -> Optional[str]:
+        return None
+
+    # ── 内部 ──
+
+    def _load_history(self) -> None:
+        if self._get_session is None:
+            return
+        try:
+            from storage.repository import MessageRepository
+            repo = MessageRepository()
+            with self._get_session() as session:
+                db_msgs = repo.get_recent(
+                    session, self.conversation_id, count=self._max_messages
+                )
+            self._messages = [
+                Message(
+                    role=m.role,
+                    content=m.content,
+                    timestamp=m.created_at.timestamp(),
+                )
+                for m in db_msgs
+            ]
+            self._persisted_count = len(db_msgs)
+        except Exception:
+            pass
+
+    def _persist(self, msg: Message) -> None:
+        if self._get_session is None:
+            return
+        try:
+            from storage.repository import MessageRepository
+            repo = MessageRepository()
+            with self._get_session() as session:
+                repo.save(
+                    session,
+                    conversation_id=self.conversation_id,
+                    role=msg.role,
+                    content=msg.content,
+                    metadata={"timestamp": msg.timestamp},
+                )
+        except Exception:
+            pass
+
+    def _trim(self) -> None:
+        if len(self._messages) > self._max_messages:
+            self._messages = self._messages[-self._max_messages:]
+
+    def __len__(self) -> int:
+        return len(self._messages)
+
+    def __repr__(self) -> str:
+        return (
+            f"PersistentConversationMemory("
+            f"conv={self.conversation_id[:8]}..., "
+            f"messages={len(self._messages)}/{self._max_messages})"
+        )
+
+
 # ── 消息格式化器 ────────────────────────────────
 #
 # 设计理由：格式化逻辑与存储逻辑分离。
