@@ -4,7 +4,6 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import type { Message, SearchResultItem, TokenUsage, StreamStatus } from '../types'
 import CitationPanel from './CitationPanel'
-import { DragHandle } from './ResizableHandle'
 
 const API_BASE = '/api'
 
@@ -16,11 +15,9 @@ const EXAMPLE_QUESTIONS = [
 
 interface ChatAreaProps {
   onMenuClick: () => void
-  citationWidth: number
-  onCitationResize: (e: React.MouseEvent) => void
 }
 
-export default function ChatArea({ onMenuClick, citationWidth, onCitationResize }: ChatAreaProps) {
+export default function ChatArea({ onMenuClick }: ChatAreaProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [status, setStatus] = useState<StreamStatus>('idle')
@@ -28,8 +25,27 @@ export default function ChatArea({ onMenuClick, citationWidth, onCitationResize 
   const [activeCitations, setActiveCitations] = useState<SearchResultItem[]>([])
   const [rerank, setRerank] = useState(true)
   const [showCitations, setShowCitations] = useState(false)
+  const [citationW, setCitationW] = useState(320)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const onCitationDrag = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const onMove = (ev: MouseEvent) => {
+      setCitationW((w) => Math.max(200, Math.min(500, w - (ev.clientX - startX))))
+    }
+    const onUp = () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -386,9 +402,14 @@ export default function ChatArea({ onMenuClick, citationWidth, onCitationResize 
       </div>
 
       {/* 拖拽手柄 + 桌面端引用面板 */}
-      <div className="hidden lg:flex">
-        <DragHandle onMouseDown={onCitationResize} />
-        <div style={{ width: citationWidth }}>
+      <div className="hidden lg:flex shrink-0">
+        <div
+          className="w-1.5 bg-gray-200 hover:bg-indigo-400 active:bg-indigo-400 transition-colors shrink-0 cursor-col-resize relative"
+          onMouseDown={onCitationDrag}
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1" />
+        </div>
+        <div style={{ width: citationW, minWidth: 200, maxWidth: 500 }}>
           <CitationPanel
             citations={activeCitations}
             onViewSource={(c) => setActiveCitations([c])}

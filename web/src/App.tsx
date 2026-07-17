@@ -2,71 +2,64 @@ import { useState } from 'react'
 import Sidebar from './components/Sidebar'
 import ChatArea from './components/ChatArea'
 import DocumentsPage from './components/DocumentsPage'
-import { useResizable, DragHandle } from './components/ResizableHandle'
 
 type Page = 'chat' | 'documents'
+
+function DragBar({ onDrag }: { onDrag: (dx: number) => void }) {
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const onMove = (ev: MouseEvent) => onDrag(ev.clientX - startX)
+    const onUp = () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  return (
+    <div
+      className="w-1.5 bg-gray-200 hover:bg-indigo-400 active:bg-indigo-400 transition-colors shrink-0 cursor-col-resize relative"
+      onMouseDown={onMouseDown}
+    >
+      <div className="absolute inset-y-0 -left-1 -right-1" />
+    </div>
+  )
+}
 
 export default function App() {
   const [page, setPage] = useState<Page>('chat')
   const [chatKey, setChatKey] = useState(0)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-
-  const sidebar = useResizable({ initialSize: 288, minSize: 200, maxSize: 400 })
-  const citations = useResizable({ initialSize: 320, minSize: 240, maxSize: 500, reverse: true })
+  const [sidebarW, setSidebarW] = useState(288)
 
   const handleNewChat = () => {
     setPage('chat')
     setChatKey((k) => k + 1)
-    setSidebarOpen(false)
-  }
-
-  const handleNavigate = (p: Page) => {
-    setPage(p)
-    setSidebarOpen(false)
   }
 
   return (
-    <div className="flex h-full bg-white">
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/30 z-30 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* 侧栏 */}
-      <div
-        className={`
-          fixed lg:static inset-y-0 left-0 z-40
-          transform transition-transform duration-200
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-          lg:translate-x-0
-        `}
-        style={{ width: sidebar.size }}
-      >
-        <Sidebar
-          onNewChat={handleNewChat}
-          currentPage={page}
-          onNavigate={handleNavigate}
-        />
+    <div className="flex h-full bg-white overflow-hidden">
+      {/* 侧栏 — 始终可见，最小 180px */}
+      <div style={{ width: sidebarW, minWidth: 180, maxWidth: 440 }} className="shrink-1 flex">
+        <Sidebar onNewChat={handleNewChat} currentPage={page} onNavigate={setPage} />
       </div>
 
-      {/* 侧栏拖拽手柄 */}
-      <div className="hidden lg:block">
-        <DragHandle onMouseDown={sidebar.onMouseDown} />
-      </div>
+      {/* 分隔条 — 始终可见 */}
+      <DragBar onDrag={(dx) => setSidebarW((w) => Math.max(180, Math.min(440, w + dx)))} />
 
-      {/* 主内容区 */}
-      {page === 'chat' ? (
-        <ChatArea
-          key={chatKey}
-          onMenuClick={() => setSidebarOpen(true)}
-          citationWidth={citations.size}
-          onCitationResize={citations.onMouseDown}
-        />
-      ) : (
-        <DocumentsPage onMenuClick={() => setSidebarOpen(true)} />
-      )}
+      {/* 主内容 */}
+      <div className="flex-1 min-w-0 flex">
+        {page === 'chat' ? (
+          <ChatArea key={chatKey} onMenuClick={() => {}} />
+        ) : (
+          <DocumentsPage onMenuClick={() => {}} />
+        )}
+      </div>
     </div>
   )
 }
