@@ -3,15 +3,20 @@ FastAPI 服务 — Agent Runtime 入口
 ================================
 
 提供端点：
-  POST /api/chat              — Agent 查询
-  POST /api/documents/upload   — 上传 Markdown 文档
-  GET  /api/documents          — 文档列表
-  DELETE /api/documents/{id}   — 删除文档
-  POST /api/index/rebuild      — 重建全部索引
-  GET  /api/stats              — 系统统计
-  GET  /api/health             — 健康检查
+  POST   /api/conversations       — 新建对话
+  GET    /api/conversations       — 对话列表
+  GET    /api/conversations/{id}  — 对话详情（含历史消息）
+  DELETE /api/conversations/{id}  — 删除对话
+  POST   /api/chat                — Agent 查询（支持 conversation_id）
+  POST   /api/chat/stream         — 流式对话
+  POST   /api/documents/upload     — 上传文档
+  GET    /api/documents            — 文档列表
+  DELETE /api/documents/{id}       — 删除文档
+  POST   /api/index/rebuild        — 重建索引
+  GET    /api/stats                — 系统统计
+  GET    /api/health               — 健康检查
 
-Agent Runtime 不变：所有核心逻辑复用现有模块。
+Agent Runtime 不变；每请求创建 Agent 实例，绑定 PersistentConversationMemory。
 """
 
 from __future__ import annotations
@@ -38,9 +43,10 @@ from api.schemas import (
     ChatRequest, ChatResponse, SearchResultItem,
     DocumentItem, DocumentListResponse, UploadResponse,
     RebuildResponse, StatsResponse,
+    ConversationItem, ConversationDetail, MessageItem,
 )
 from src.agent.agent import Agent
-from src.agent.memory import ConversationMemory
+from src.agent.memory import PersistentConversationMemory
 from src.agent.planner import RuleBasedPlanner
 from src.agent.query_rewriter import QueryRewriter
 from src.agent.tool import SearchKnowledgeTool, ToolManager
@@ -51,18 +57,24 @@ from src.retriever.retriever import Retriever, SearchResult
 from src.parsers.registry import get_supported_extensions
 from src.reranker.reranker import BGEReranker
 from src.vectorstore.faiss_store import FAISSVectorStore
+from storage.database import get_session, init_db
+from storage.repository import ConversationRepository
 
-# ── 模块级全局（供所有路由共享）────────────────
+# ── 模块级全局（基础设施，所有请求共享）─────────
 
-agent: Agent | None = None
 _store: FAISSVectorStore | None = None
 _bm25: BM25Retriever | None = None
 _provider = None
 _doc_manager: DocumentManager | None = None
+_llm: DeepSeekLLM | None = None
+_tool_manager: ToolManager | None = None
 
 
-def _init_agent():
-    global agent, _store, _bm25, _provider, _doc_manager
+def _init_infrastructure():
+    global _store, _bm25, _provider, _doc_manager, _llm, _tool_manager
+
+    init_db()
+    print("[db] SQLite 已就绪")
 
     _store = FAISSVectorStore(index_dir="output")
     loaded = _store.load()
@@ -97,30 +109,50 @@ def _init_agent():
             print(f"[boot] Reranker 加载失败（内存不足？），已禁用: {e}")
             reranker = None
 
-    llm = DeepSeekLLM()
-    query_rewriter = QueryRewriter(llm)
+    _llm = DeepSeekLLM()
+    query_rewriter = QueryRewriter(_llm)
 
     knowledge_tool = SearchKnowledgeTool(
         retriever=retriever, reranker=reranker, query_rewriter=query_rewriter
     )
-    tool_manager = ToolManager()
-    tool_manager.register(knowledge_tool)
-
-    agent = Agent(
-        memory=ConversationMemory(max_messages=20),
-        planner=RuleBasedPlanner(),
-        tool_manager=tool_manager,
-        llm=llm,
-    )
+    _tool_manager = ToolManager()
+    _tool_manager.register(knowledge_tool)
 
     _doc_manager = DocumentManager(_store, _bm25, _provider)
-    print("[OK] Agent 初始化完成")
+    print("[OK] 基础设施初始化完成")
+
+
+def _make_agent(conversation_id: str) -> Agent:
+    """为指定对话创建 Agent 实例，绑定持久化 Memory"""
+    return Agent(
+        memory=PersistentConversationMemory(
+            conversation_id=conversation_id,
+            get_session=get_session,
+            max_messages=20,
+        ),
+        planner=RuleBasedPlanner(),
+        tool_manager=_tool_manager,
+        llm=_llm,
+    )
+
+
+def _auto_title(conversation_id: str, text: str) -> None:
+    """用首条消息前 30 字自动命名对话"""
+    title = text.strip()[:30].replace("\n", " ")
+    if not title:
+        title = "新对话"
+    try:
+        repo = ConversationRepository()
+        with get_session() as s:
+            repo.update_title(s, conversation_id, title)
+    except Exception:
+        pass
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("[boot] 加载模型并初始化 Agent...")
-    _init_agent()
+    print("[boot] 加载模型并初始化...")
+    _init_infrastructure()
     yield
     print("[shutdown] 服务关闭")
 
@@ -175,17 +207,107 @@ def _format_search_result(r: SearchResult) -> dict:
     }
 
 
-def _require_agent():
-    if agent is None:
-        raise HTTPException(status_code=503, detail="Agent 尚未初始化")
+def _require_infra():
+    if _tool_manager is None:
+        raise HTTPException(status_code=503, detail="服务尚未初始化")
+
+
+# ── Conversations ──────────────────────────────
+
+@app.post("/api/conversations", response_model=ConversationItem)
+def create_conversation():
+    _require_infra()
+    repo = ConversationRepository()
+    with get_session() as s:
+        conv = repo.create(s)
+    msgs = []
+    with get_session() as s:
+        from storage.repository import MessageRepository
+        msgs = MessageRepository().get_recent(s, conv.id, count=50)
+    return ConversationItem(
+        id=conv.id,
+        title=conv.title,
+        message_count=len(msgs),
+        updated_at=conv.updated_at.isoformat() if conv.updated_at else "",
+    )
+
+
+@app.get("/api/conversations", response_model=list[ConversationItem])
+def list_conversations():
+    _require_infra()
+    repo = ConversationRepository()
+    msg_repo = None
+    with get_session() as s:
+        convs = repo.list_all(s)
+        from storage.repository import MessageRepository
+        msg_repo = MessageRepository()
+        items = []
+        for c in convs:
+            msgs = msg_repo.get_recent(s, c.id, count=50)
+            items.append(ConversationItem(
+                id=c.id,
+                title=c.title,
+                message_count=len(msgs),
+                updated_at=c.updated_at.isoformat() if c.updated_at else "",
+            ))
+    return items
+
+
+@app.get("/api/conversations/{conv_id}", response_model=ConversationDetail)
+def get_conversation(conv_id: str):
+    _require_infra()
+    repo = ConversationRepository()
+    with get_session() as s:
+        conv = repo.get_by_id(s, conv_id)
+        if conv is None:
+            raise HTTPException(status_code=404, detail="对话不存在")
+        messages = [
+            MessageItem(
+                id=m.id,
+                role=m.role,
+                content=m.content,
+                created_at=m.created_at.isoformat() if m.created_at else "",
+            )
+            for m in conv.messages or []
+        ]
+        return ConversationDetail(
+            id=conv.id,
+            title=conv.title,
+            messages=messages,
+            updated_at=conv.updated_at.isoformat() if conv.updated_at else "",
+        )
+
+
+@app.delete("/api/conversations/{conv_id}")
+def delete_conversation(conv_id: str):
+    _require_infra()
+    repo = ConversationRepository()
+    with get_session() as s:
+        ok = repo.delete(s, conv_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="对话不存在")
+    return {"message": "已删除", "id": conv_id}
 
 
 # ── Chat ──────────────────────────────────────
 
+def _resolve_conversation(conv_id: str) -> str:
+    """如果 conversation_id 为空或不存在，自动创建新对话。返回有效 ID。"""
+    repo = ConversationRepository()
+    if conv_id:
+        with get_session() as s:
+            if repo.get_by_id(s, conv_id) is not None:
+                return conv_id
+    with get_session() as s:
+        return repo.create(s).id
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
-    _require_agent()
+    _require_infra()
 
+    conv_id = _resolve_conversation(request.conversation_id)
+    agent = _make_agent(conv_id)
     t0 = time.perf_counter()
 
     try:
@@ -193,6 +315,7 @@ def chat(request: ChatRequest):
     except Exception as exc:
         return ChatResponse(
             question=request.question,
+            conversation_id=conv_id,
             answer="",
             error=f"Agent 执行失败: {exc}",
         )
@@ -200,9 +323,17 @@ def chat(request: ChatRequest):
     retrieval_ms = round((time.perf_counter() - t0) * 1000, 1)
     _, reranked, rewritten_query = _extract_search_results(agent)
 
+    # 首条消息自动命名
+    repo = ConversationRepository()
+    with get_session() as s:
+        conv = repo.get_by_id(s, conv_id)
+        if conv and conv.title == "新对话":
+            _auto_title(conv_id, request.question)
+
     return ChatResponse(
         question=request.question,
         answer=answer,
+        conversation_id=conv_id,
         rewritten_query=rewritten_query,
         citations=[SearchResultItem(**item) for item in reranked],
         retrieval_ms=retrieval_ms,
@@ -213,7 +344,10 @@ def chat(request: ChatRequest):
 @app.post("/api/chat/stream")
 def chat_stream(request: ChatRequest):
     """SSE 流式对话端点"""
-    _require_agent()
+    _require_infra()
+
+    conv_id = _resolve_conversation(request.conversation_id)
+    agent = _make_agent(conv_id)
 
     def generate():
         t0 = time.perf_counter()
@@ -236,6 +370,16 @@ def chat_stream(request: ChatRequest):
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
             return
 
+        # 首条消息自动命名
+        try:
+            repo = ConversationRepository()
+            with get_session() as s:
+                conv = repo.get_by_id(s, conv_id)
+                if conv and conv.title == "新对话":
+                    _auto_title(conv_id, request.question)
+        except Exception:
+            pass
+
         retrieval_ms = round((time.perf_counter() - t0) * 1000, 1)
         _, reranked, rewritten_query = _extract_search_results(agent)
 
@@ -254,7 +398,7 @@ def chat_stream(request: ChatRequest):
             for r in reranked
         ]
 
-        yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'citations': citations, 'rewritten_query': rewritten_query, 'retrieval_ms': retrieval_ms, 'usage': usage}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'conversation_id': conv_id, 'answer': answer, 'citations': citations, 'rewritten_query': rewritten_query, 'retrieval_ms': retrieval_ms, 'usage': usage}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -263,7 +407,7 @@ def chat_stream(request: ChatRequest):
 
 @app.post("/api/documents/upload", response_model=UploadResponse)
 async def upload_document(file: UploadFile = File(...)):
-    _require_agent()
+    _require_infra()
 
     ext = (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
     supported = get_supported_extensions()
@@ -299,7 +443,7 @@ async def upload_document(file: UploadFile = File(...)):
 
 @app.get("/api/documents", response_model=DocumentListResponse)
 def list_documents():
-    _require_agent()
+    _require_infra()
 
     records = _doc_manager.list_documents()
     items = [
@@ -321,7 +465,7 @@ def list_documents():
 
 @app.delete("/api/documents/{doc_id}")
 def delete_document(doc_id: str):
-    _require_agent()
+    _require_infra()
 
     ok = _doc_manager.delete(doc_id)
     if not ok:
@@ -332,7 +476,7 @@ def delete_document(doc_id: str):
 
 @app.post("/api/index/rebuild", response_model=RebuildResponse)
 def rebuild_index():
-    _require_agent()
+    _require_infra()
 
     try:
         result = _doc_manager.rebuild_index()
@@ -350,7 +494,7 @@ def rebuild_index():
 
 @app.get("/api/stats", response_model=StatsResponse)
 def stats():
-    _require_agent()
+    _require_infra()
 
     s = _doc_manager.stats()
     return StatsResponse(
@@ -362,7 +506,7 @@ def stats():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "agent_ready": agent is not None}
+    return {"status": "ok", "ready": _tool_manager is not None}
 
 
 # ── 前端静态文件（生产模式）────────────────────

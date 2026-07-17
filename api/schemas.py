@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, description="用户问题")
+    conversation_id: str = Field(default="", description="对话 ID，空则自动创建")
     rerank: bool = Field(default=True, description="是否启用 Reranker")
 
 
@@ -30,10 +31,34 @@ class SearchResultItem(BaseModel):
 class ChatResponse(BaseModel):
     question: str
     answer: str
+    conversation_id: str = ""
     rewritten_query: str = ""
     citations: list[SearchResultItem] = Field(default_factory=list)
     retrieval_ms: float = 0.0
     error: str | None = None
+
+
+# ── Conversations ──────────────────────────────
+
+class MessageItem(BaseModel):
+    id: str
+    role: str
+    content: str
+    created_at: str = ""
+
+
+class ConversationItem(BaseModel):
+    id: str
+    title: str
+    message_count: int = 0
+    updated_at: str = ""
+
+
+class ConversationDetail(BaseModel):
+    id: str
+    title: str
+    messages: list[MessageItem] = Field(default_factory=list)
+    updated_at: str = ""
 
 
 # ── Documents ─────────────────────────────────
