@@ -1,6 +1,6 @@
 # DocAgent — Enterprise Knowledge Agent
 
-> 把你的文档变成可对话的知识库。上传 Markdown / PDF / Word，像 ChatGPT 一样提问，像 Perplexity 一样引用来源。
+> 把你的文档变成可对话的知识库。上传 Markdown / PDF / Word / TXT / HTML，像 ChatGPT 一样提问，像 Perplexity 一样引用来源。
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-teal)](https://fastapi.tiangolo.com)
@@ -18,14 +18,14 @@
 - **Hybrid Search 混合检索** — FAISS 向量检索 + BM25 关键词检索 + RRF 融合 + Cross-encoder 精排
 - **LLM Query Rewriting** — 口语化问题自动改写为搜索引擎优化查询，提升召回命中率
 - **SSE 流式输出** — 逐 token 实时渲染，Markdown 渲染 + 代码高亮 + 内联引用标注
-- **多格式文档** — 支持 Markdown / PDF / Word 上传，自动解析、分块、向量化、增量索引
+- **多格式文档** — 支持 Markdown / PDF / Word / TXT / HTML 上传，自动解析、分块、向量化、增量索引
 - **Docker 一键部署** — 本地 `python start.py` 启动，云端 Docker / Render 部署
 - **数据完全本地** — 文档不上传任何第三方，只在你的机器上运行
 
 ## 架构
 
 ```
-用户文档 (md/pdf/docx)
+用户文档 (md/pdf/docx/txt/html)
      │
      ▼
  解析 → 分块 (RecursiveCharacterTextSplitter) + 上下文增强
@@ -84,7 +84,7 @@ python start.py --dev
 | 前端 | React + TypeScript + Vite + TailwindCSS |
 | 后端 | Python + FastAPI |
 | Agent Runtime | 自研（Tool / Memory / Planner 三层抽象） |
-| 文档解析 | LangChain TextSplitter + PyMuPDF + python-docx |
+| 文档解析 | LangChain TextSplitter + PyMuPDF + python-docx + BeautifulSoup |
 | Embedding | BAAI/bge-small-zh-v1.5（512d，本地 CPU） |
 | 向量检索 | FAISS（IndexFlatIP，余弦相似度） |
 | 关键词检索 | BM25 + jieba 中文分词 |
