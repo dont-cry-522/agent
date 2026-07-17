@@ -36,7 +36,7 @@ export default function ChatArea({ conversationId }: ChatAreaProps) {
     if (conversationId) {
       getConversation(conversationId)
         .then((detail) => {
-          const history: Message[] = detail.messages.map((m: { id: string; role: string; content: string; created_at: string }) => ({
+          const history: Message[] = detail.messages.map((m) => ({
             id: m.id,
             role: m.role as 'user' | 'assistant',
             content: m.content,
@@ -45,7 +45,10 @@ export default function ChatArea({ conversationId }: ChatAreaProps) {
           setMessages(history)
           setActiveCitations([])
         })
-        .catch(() => setMessages([]))
+        .catch((err) => {
+          console.error('Load history failed:', err)
+          setMessages([])
+        })
     } else {
       setMessages([])
       setActiveCitations([])
