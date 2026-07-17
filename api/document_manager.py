@@ -7,8 +7,7 @@ DocumentManager — 文档生命周期管理
 
 支持格式: .md .txt .pdf .docx .html
 
-所有操作复用现有模块（Parser / DocumentChunker / BGEProvider /
-FAISSVectorStore / BM25Retriever），不重新实现任何核心逻辑。
+元数据通过 DocumentRepository 持久化到 SQLite，不再使用 JSON 文件。
 """
 
 from __future__ import annotations
@@ -27,15 +26,12 @@ from src.vectorstore.faiss_store import FAISSVectorStore
 
 
 UPLOADS_DIR = Path("uploads")
-DOCUMENTS_FILE = Path("output/documents.json")
-
-# 拼接 glob 模式: *.md / *.pdf / *.docx / *.txt / *.html
 SUPPORTED_GLOB = [f"*.{ext}" for ext in get_supported_extensions() if ext not in ("markdown", "htm")]
 
 
 @dataclass
 class DocRecord:
-    """文档元数据记录（不存内容，只存管理信息）"""
+    """文档元数据记录（返回给 API 层使用）"""
     id: str
     filename: str
     original_name: str
@@ -55,39 +51,66 @@ class DocumentManager:
         store: FAISSVectorStore,
         bm25: BM25Retriever,
         provider,  # EmbeddingProvider
+        get_session=None,  # callable → Session
         chunker: DocumentChunker | None = None,
     ):
         self._store = store
         self._bm25 = bm25
         self._provider = provider
+        self._get_session = get_session
         self._chunker = chunker or DocumentChunker()
-
         UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-        DOCUMENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self._migrate_json_if_needed()
+
+    # ── JSON → SQLite 迁移 ───────────────────
+
+    def _migrate_json_if_needed(self) -> None:
+        json_path = Path("output/documents.json")
+        if not json_path.exists() or self._get_session is None:
+            return
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+            if not data:
+                return
+            from storage.repository import DocumentRepository
+            repo = DocumentRepository()
+            with self._get_session() as s:
+                if repo.count(s) > 0:
+                    # 已有 SQLite 记录，且比 JSON 新，跳过
+                    json_mtime = json_path.stat().st_mtime
+                    latest = repo.list_all(s)
+                    if latest and latest[0].created_at.timestamp() > json_mtime:
+                        return
+                for item in data:
+                    doc_id = item.get("id", uuid.uuid4().hex[:12])
+                    if repo.get_by_id(s, doc_id):
+                        continue
+                    repo.create(
+                        s,
+                        id=doc_id,
+                        filename=item.get("filename", ""),
+                        original_name=item.get("original_name", ""),
+                        format=item.get("format", "unknown"),
+                        file_size=item.get("file_size", 0),
+                        chunk_count=item.get("chunk_count", 0),
+                        status=item.get("status", "ready"),
+                        error=item.get("error", ""),
+                    )
+                print(f"[migrate] {len(data)} 条文档记录已从 JSON 迁移到 SQLite")
+                json_path.rename(json_path.with_suffix(".json.bak"))
+        except Exception as e:
+            print(f"[migrate] 迁移失败（不影响使用）: {e}")
 
     # ── 上传文档 ──────────────────────────────
 
     def upload(self, file_bytes: bytes, filename: str) -> DocRecord:
-        """上传文件，自动识别格式 → 解析 → 分块 → 向量化 → 索引
-
-        支持: .md .txt .pdf .docx .html
-
-        Args:
-            file_bytes: 文件内容（字节）
-            filename:   原始文件名
-
-        Returns:
-            DocRecord — 文档元数据记录
-        """
         safe_name = self._sanitize_filename(filename)
         doc_id = uuid.uuid4().hex[:12]
         ext = Path(filename).suffix.lower().lstrip(".")
 
-        # 1. 保存原始文件
         upload_path = UPLOADS_DIR / f"{doc_id}_{safe_name}"
         upload_path.write_bytes(file_bytes)
 
-        # 2. 解析为纯文本
         try:
             content = parse_file(upload_path)
         except ValueError as e:
@@ -110,27 +133,19 @@ class DocumentManager:
             updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
 
-        # 3. Chunk 切分
         chunks = self._chunker.split(document)
         if not chunks:
             upload_path.unlink()
             raise ValueError("文档内容为空，无法分块")
 
-        # 4. 构建 chunk metadata
         chunk_dicts = [c.to_dict() for c in chunks]
         chunk_texts = [c.chunk_content for c in chunks]
-
-        # 5. Embedding
         embeddings = self._provider.embed_documents(chunk_texts)
 
-        # 6. 追加到 FAISS
         self._store.add_vectors(embeddings, chunk_dicts)
         self._store.save()
-
-        # 7. 重建 BM25
         self._bm25.rebuild(self._store.metadata)
 
-        # 8. 写入文档记录
         record = DocRecord(
             id=doc_id,
             filename=upload_path.name,
@@ -139,47 +154,75 @@ class DocumentManager:
             file_size=len(file_bytes),
             chunk_count=len(chunks),
         )
-        self._save_doc_record(record)
-
+        self._persist_record(record)
         return record
 
     # ── 文档列表 ──────────────────────────────
 
     def list_documents(self) -> list[DocRecord]:
-        """返回所有文档记录"""
-        return self._load_doc_records()
+        if self._get_session is None:
+            return []
+        try:
+            from storage.repository import DocumentRepository
+            repo = DocumentRepository()
+            with self._get_session() as s:
+                db_docs = repo.list_all(s)
+            return [
+                DocRecord(
+                    id=d.id,
+                    filename=d.filename,
+                    original_name=d.original_name,
+                    format=d.format,
+                    file_size=d.file_size,
+                    chunk_count=d.chunk_count,
+                    status=d.status,
+                    error=d.error,
+                    created_at=d.created_at.strftime("%Y-%m-%d %H:%M:%S") if d.created_at else "",
+                )
+                for d in db_docs
+            ]
+        except Exception:
+            return []
 
     # ── 删除文档 ──────────────────────────────
 
     def delete(self, doc_id: str) -> bool:
-        """删除文档：移除文件 + 移除索引 + 移除记录"""
-        records = self._load_doc_records()
-        target = next((r for r in records if r.id == doc_id), None)
-        if target is None:
-            return False
+        target = None
+        if self._get_session is not None:
+            try:
+                from storage.repository import DocumentRepository
+                repo = DocumentRepository()
+                with self._get_session() as s:
+                    db_doc = repo.get_by_id(s, doc_id)
+                    if db_doc:
+                        target = db_doc.filename
+                        repo.delete(s, doc_id)
+            except Exception:
+                pass
 
-        # 1. 删除上传文件
-        file_path = UPLOADS_DIR / target.filename
-        if file_path.exists():
-            file_path.unlink()
+        if target:
+            file_path = UPLOADS_DIR / target
+            if file_path.exists():
+                file_path.unlink()
+        else:
+            for f in UPLOADS_DIR.iterdir():
+                if f.name.startswith(doc_id + "_"):
+                    target = f.name
+                    f.unlink()
+                    break
+            if not target:
+                return False
 
-        # 2. 从 FAISS metadata 中移除
         removed = self._store.remove_by_document_id(doc_id)
         if removed > 0:
             self._store.rebuild_from_metadata(self._provider)
             self._store.save()
             self._bm25.rebuild(self._store.metadata)
-
-        # 3. 删除记录
-        records = [r for r in records if r.id != doc_id]
-        self._write_doc_records(records)
-
         return True
 
     # ── 重建索引 ──────────────────────────────
 
     def rebuild_index(self) -> dict:
-        """从 uploads/ 目录全量重建索引（支持所有格式）"""
         all_files: list[Path] = []
         for pattern in SUPPORTED_GLOB:
             all_files.extend(UPLOADS_DIR.glob(pattern))
@@ -235,7 +278,19 @@ class DocumentManager:
 
         self._store.save()
         self._bm25.rebuild(self._store.metadata)
-        self._write_doc_records(records)
+
+        if self._get_session is not None:
+            try:
+                from storage.repository import DocumentRepository
+                repo = DocumentRepository()
+                with self._get_session() as s:
+                    for r in records:
+                        if not repo.get_by_id(s, r.id):
+                            repo.create(s, **r.__dict__)
+                        else:
+                            repo.update(s, r.id, chunk_count=r.chunk_count, file_size=r.file_size)
+            except Exception:
+                pass
 
         return {
             "document_count": len(records),
@@ -245,11 +300,21 @@ class DocumentManager:
     # ── 统计 ──────────────────────────────────
 
     def stats(self) -> dict:
-        records = self._load_doc_records()
+        doc_count = 0
+        total_size = 0
+        if self._get_session is not None:
+            try:
+                from storage.repository import DocumentRepository
+                repo = DocumentRepository()
+                with self._get_session() as s:
+                    doc_count = repo.count(s)
+                    total_size = repo.total_size(s)
+            except Exception:
+                pass
         return {
-            "document_count": len(records),
+            "document_count": doc_count,
             "chunk_count": self._store.count,
-            "total_size": sum(r.file_size for r in records),
+            "total_size": total_size,
         }
 
     # ── 内部辅助 ──────────────────────────────
@@ -258,25 +323,23 @@ class DocumentManager:
     def _sanitize_filename(name: str) -> str:
         return Path(name).name
 
-    def _load_doc_records(self) -> list[DocRecord]:
-        if not DOCUMENTS_FILE.exists():
-            return []
-        data = json.loads(DOCUMENTS_FILE.read_text(encoding="utf-8"))
-        valid_keys = {"id", "filename", "original_name", "format", "file_size", "chunk_count", "status", "error", "created_at"}
-        records = []
-        for item in data:
-            filtered = {k: v for k, v in item.items() if k in valid_keys}
-            if "id" in filtered and "filename" in filtered:
-                records.append(DocRecord(**filtered))
-        return records
-
-    def _write_doc_records(self, records: list[DocRecord]) -> None:
-        DOCUMENTS_FILE.write_text(
-            json.dumps([r.__dict__ for r in records], ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    def _save_doc_record(self, record: DocRecord) -> None:
-        records = self._load_doc_records()
-        records.append(record)
-        self._write_doc_records(records)
+    def _persist_record(self, record: DocRecord) -> None:
+        if self._get_session is None:
+            return
+        try:
+            from storage.repository import DocumentRepository
+            repo = DocumentRepository()
+            with self._get_session() as s:
+                repo.create(
+                    s,
+                    id=record.id,
+                    filename=record.filename,
+                    original_name=record.original_name,
+                    format=record.format,
+                    file_size=record.file_size,
+                    chunk_count=record.chunk_count,
+                    status=record.status,
+                    error=record.error,
+                )
+        except Exception as e:
+            print(f"[doc] 持久化记录失败: {e}")

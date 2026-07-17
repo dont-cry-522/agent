@@ -4,14 +4,13 @@ models — ORM 数据模型
 
 Conversation: 对话容器
 Message:     对话中的单条消息
-
-两个模型建模为 dataclass-style SQLAlchemy 2.0 Mapped 风格。
+DocumentRecord: 知识库文档
 """
 
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import String, Text, JSON, DateTime, ForeignKey, func
+from sqlalchemy import String, Text, JSON, DateTime, ForeignKey, func, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -91,3 +90,40 @@ class Message(Base):
 
     def __repr__(self) -> str:
         return f"<Message id={self.id!r} role={self.role!r}>"
+
+
+class DocumentRecord(Base):
+    __tablename__ = "documents"
+
+    id: Mapped[str] = mapped_column(
+        String(32), primary_key=True, default=lambda: uuid4().hex[:12]
+    )
+    filename: Mapped[str] = mapped_column(
+        String(300), nullable=False
+    )
+    original_name: Mapped[str] = mapped_column(
+        String(300), nullable=False
+    )
+    format: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="unknown"
+    )
+    file_size: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    chunk_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="ready"
+    )
+    error: Mapped[str] = mapped_column(
+        Text, nullable=False, default=""
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Document id={self.id!r} name={self.original_name!r}>"

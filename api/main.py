@@ -118,7 +118,7 @@ def _init_infrastructure():
     _tool_manager = ToolManager()
     _tool_manager.register(knowledge_tool)
 
-    _doc_manager = DocumentManager(_store, _bm25, _provider)
+    _doc_manager = DocumentManager(_store, _bm25, _provider, get_session=get_session)
     print("[OK] 基础设施初始化完成")
 
 

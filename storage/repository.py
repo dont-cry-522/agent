@@ -22,7 +22,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from storage.models import Conversation, Message
+from storage.models import Conversation, Message, DocumentRecord
 
 
 class ConversationRepository:
@@ -172,3 +172,83 @@ class MessageRepository:
         )
         session.commit()
         return count
+
+
+class DocumentRepository:
+
+    def create(
+        self,
+        session: Session,
+        *,
+        id: str,
+        filename: str,
+        original_name: str,
+        format: str,
+        file_size: int,
+        chunk_count: int = 0,
+        status: str = "ready",
+        error: str = "",
+    ) -> DocumentRecord:
+        doc = DocumentRecord(
+            id=id,
+            filename=filename,
+            original_name=original_name,
+            format=format,
+            file_size=file_size,
+            chunk_count=chunk_count,
+            status=status,
+            error=error,
+        )
+        session.add(doc)
+        session.commit()
+        session.refresh(doc)
+        return doc
+
+    def get_by_id(
+        self, session: Session, doc_id: str
+    ) -> DocumentRecord | None:
+        return session.get(DocumentRecord, doc_id)
+
+    def list_all(
+        self, session: Session
+    ) -> list[DocumentRecord]:
+        return (
+            session.query(DocumentRecord)
+            .order_by(DocumentRecord.created_at.desc())
+            .all()
+        )
+
+    def update(
+        self,
+        session: Session,
+        doc_id: str,
+        **kwargs,
+    ) -> DocumentRecord | None:
+        doc = self.get_by_id(session, doc_id)
+        if doc is None:
+            return None
+        for key, value in kwargs.items():
+            if hasattr(doc, key):
+                setattr(doc, key, value)
+        session.commit()
+        session.refresh(doc)
+        return doc
+
+    def delete(
+        self, session: Session, doc_id: str
+    ) -> bool:
+        doc = self.get_by_id(session, doc_id)
+        if doc is None:
+            return False
+        session.delete(doc)
+        session.commit()
+        return True
+
+    def count(self, session: Session) -> int:
+        return session.query(DocumentRecord).count()
+
+    def total_size(self, session: Session) -> int:
+        result = session.query(
+            __import__("sqlalchemy").func.sum(DocumentRecord.file_size)
+        ).scalar()
+        return result or 0
