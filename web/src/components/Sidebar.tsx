@@ -28,7 +28,7 @@ export default function Sidebar({ onNewChat, currentPage, onNavigate }: SidebarP
   }, [currentPage])
 
   return (
-    <aside className="h-full bg-gray-50/50 border-r border-gray-100 flex flex-col">
+    <aside className="w-72 bg-gray-50/50 border-r border-gray-100 flex flex-col h-full shrink-0">
       <div className="p-3 border-b border-gray-100 space-y-2">
         <button
           onClick={onNewChat}
