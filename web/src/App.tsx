@@ -19,7 +19,6 @@ export default function App() {
   }
 
   const handleSelectConversation = (id: string) => {
-    console.log('Switch to conversation:', id)
     setPage('chat')
     setCurrentConvId(id)
     setChatKey((k) => k + 1)
