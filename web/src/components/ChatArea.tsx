@@ -13,13 +13,18 @@ const EXAMPLE_QUESTIONS = [
   'Python 异步编程的核心概念',
 ]
 
-export default function ChatArea() {
+interface ChatAreaProps {
+  onMenuClick: () => void
+}
+
+export default function ChatArea({ onMenuClick }: ChatAreaProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [status, setStatus] = useState<StreamStatus>('idle')
   const [streamingText, setStreamingText] = useState('')
   const [activeCitations, setActiveCitations] = useState<SearchResultItem[]>([])
   const [rerank, setRerank] = useState(true)
+  const [showCitations, setShowCitations] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -162,27 +167,48 @@ export default function ChatArea() {
   return (
     <div className="flex-1 flex h-full min-w-0">
       <div className="flex-1 flex flex-col min-w-0 bg-white">
+        {/* 移动端顶部栏 */}
+        <div className="lg:hidden flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 shrink-0">
+          <button
+            onClick={onMenuClick}
+            className="p-1.5 -ml-1 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+          >
+            <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <span className="text-sm font-medium text-gray-700">DocAgent</span>
+          {activeCitations.length > 0 && (
+            <button
+              onClick={() => setShowCitations(!showCitations)}
+              className="ml-auto p-1.5 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+            >
+              <span className="text-xs text-indigo-500 font-medium">{activeCitations.length} 条引用</span>
+            </button>
+          )}
+        </div>
+
         {messages.length === 0 && status === 'idle' ? (
-          <div className="flex-1 flex items-center justify-center px-8">
+          <div className="flex-1 flex items-center justify-center px-4 sm:px-8">
             <div className="text-center max-w-lg w-full -mt-16">
-              <div className="w-12 h-12 bg-gray-900 rounded-2xl mx-auto mb-6 flex items-center justify-center">
-                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-900 rounded-2xl mx-auto mb-4 sm:mb-6 flex items-center justify-center">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2 tracking-tight">
                 有什么可以帮助你的？
               </h2>
-              <p className="text-gray-500 text-sm mb-8">
+              <p className="text-gray-500 text-sm mb-6 sm:mb-8">
                 向你的本地知识库提问，获取基于文档的精准回答
               </p>
 
-              <div className="flex flex-wrap justify-center gap-2">
+              <div className="flex flex-col sm:flex-row flex-wrap justify-center gap-2">
                 {EXAMPLE_QUESTIONS.map((q) => (
                   <button
                     key={q}
                     onClick={() => handleSend(q)}
-                    className="px-4 py-2.5 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl transition-colors cursor-pointer text-left max-w-[280px] leading-snug"
+                    className="px-3 py-2.5 sm:px-4 sm:py-2.5 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl transition-colors cursor-pointer text-left sm:max-w-[280px] leading-snug"
                   >
                     {q}
                   </button>
@@ -192,18 +218,18 @@ export default function ChatArea() {
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto">
-            <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
+            <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">{/* messages content same as before */}
               {messages.map((msg) => (
-                <div key={msg.id} className="flex gap-3">
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                <div key={msg.id} className="flex gap-2 sm:gap-3">
+                  <div className={`w-6 h-6 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
                     msg.role === 'user' ? 'bg-gray-900' : 'bg-indigo-100'
                   }`}>
                     {msg.role === 'user' ? (
-                      <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                       </svg>
                     ) : (
-                      <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                       </svg>
                     )}
@@ -231,7 +257,7 @@ export default function ChatArea() {
                         )}
                         {msg.citations && msg.citations.length > 0 && (
                           <button
-                            onClick={() => setActiveCitations(msg.citations!)}
+                            onClick={() => { setActiveCitations(msg.citations!); setShowCitations(true) }}
                             className="text-indigo-500 hover:text-indigo-700 font-medium transition-colors cursor-pointer"
                           >
                             {msg.citations.length} 条引用
@@ -247,9 +273,9 @@ export default function ChatArea() {
               ))}
 
               {isBusy && (
-                <div className="flex gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0 mt-0.5">
-                    <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="flex gap-2 sm:gap-3">
+                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0 mt-0.5">
+                    <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                     </svg>
                   </div>
@@ -276,9 +302,9 @@ export default function ChatArea() {
               )}
 
               {status === 'error' && streamingText && (
-                <div className="flex gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0 mt-0.5">
-                    <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="flex gap-2 sm:gap-3">
+                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0 mt-0.5">
+                    <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
@@ -293,23 +319,33 @@ export default function ChatArea() {
           </div>
         )}
 
-        <div className="border-t border-gray-100 bg-white px-6 py-4">
+        {/* 移动端引用面板 */}
+        {showCitations && activeCitations.length > 0 && (
+          <div className="lg:hidden border-t border-gray-100">
+            <CitationPanel
+              citations={activeCitations}
+              onViewSource={(c) => setActiveCitations([c])}
+            />
+          </div>
+        )}
+
+        <div className="border-t border-gray-100 bg-white px-3 sm:px-6 py-3 sm:py-4">
           <div className="max-w-3xl mx-auto">
-            <div className="relative flex items-end gap-3 bg-gray-50 border border-gray-200 rounded-2xl px-5 py-3.5 focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
+            <div className="relative flex items-end gap-2 sm:gap-3 bg-gray-50 border border-gray-200 rounded-2xl px-3 sm:px-5 py-2.5 sm:py-3.5 focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder="输入问题，Enter 发送，Shift+Enter 换行"
+                placeholder="输入问题，Enter 发送"
                 disabled={isBusy}
                 rows={1}
-                className="flex-1 bg-transparent outline-none text-base text-gray-800 placeholder-gray-400 resize-none disabled:opacity-50 max-h-40"
+                className="flex-1 bg-transparent outline-none text-sm sm:text-base text-gray-800 placeholder-gray-400 resize-none disabled:opacity-50 max-h-40"
               />
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1 shrink-0">
                 <button
                   onClick={() => setRerank(!rerank)}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-lg transition-colors cursor-pointer ${
+                  className={`hidden sm:flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-lg transition-colors cursor-pointer ${
                     rerank
                       ? 'bg-indigo-50 text-indigo-600 border border-indigo-200'
                       : 'bg-white text-gray-400 border border-gray-200 hover:text-gray-600'
@@ -322,15 +358,15 @@ export default function ChatArea() {
                 <button
                   onClick={() => handleSend()}
                   disabled={isBusy || !input.trim()}
-                  className="p-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  className="p-2 sm:p-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
                 >
                   {isBusy ? (
-                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
                   ) : (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
                     </svg>
                   )}
@@ -338,7 +374,7 @@ export default function ChatArea() {
               </div>
             </div>
             {rerank && (
-              <p className="text-[11px] text-gray-400 text-center mt-2">
+              <p className="text-[11px] text-gray-400 text-center mt-2 hidden sm:block">
                 Reranker 已启用 · 精排使结果更准确
               </p>
             )}
@@ -346,10 +382,13 @@ export default function ChatArea() {
         </div>
       </div>
 
-      <CitationPanel
-        citations={activeCitations}
-        onViewSource={(c) => setActiveCitations([c])}
-      />
+      {/* 桌面端引用面板 */}
+      <div className="hidden lg:block">
+        <CitationPanel
+          citations={activeCitations}
+          onViewSource={(c) => setActiveCitations([c])}
+        />
+      </div>
     </div>
   )
 }
