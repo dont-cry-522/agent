@@ -131,10 +131,11 @@ class Agent:
 
     SYSTEM_PROMPT = (
         "你是一个知识库助手。你可以访问用户的本地知识库来回答问题。\n"
-        "当工具搜索结果可用时，你会看到搜索到的文档片段。\n"
+        "当工具搜索结果可用时，你会看到搜索到的文档片段，每条标有 [参考 N]。\n"
         "请基于搜索结果和对话历史回答用户问题。\n"
         "如果搜索结果不足以回答问题，请如实说明，不要编造信息。\n"
-        "回答时请引用文档来源。"
+        "回答时请使用 [1] [2] 格式标注引用来源，每个数字对应一条参考资料的编号。\n"
+        "例如：MCP 是一个开放协议 [1]，它定义了 AI 与外部工具的交互标准 [1][2]。"
     )
 
     def __init__(
@@ -295,21 +296,40 @@ class Agent:
 
     def _build_prompt(self, query: str, state: AgentState) -> tuple[str, str]:
         history_text = self._format_history()
-        observations_text = self._format_observations(state)
+
+        # 从 observation 中提取 SearchResult 并用 PromptBuilder 格式化
+        context_text = self._format_context_from_observations(state)
 
         user_parts = []
 
         if history_text:
             user_parts.append(f"## 对话历史\n\n{history_text}")
 
-        if observations_text:
-            user_parts.append(f"## 搜索结果\n\n{observations_text}")
+        if context_text:
+            user_parts.append(f"## 参考资料\n\n{context_text}")
 
         user_parts.append(f"## 用户问题\n\n{query}")
 
         user_message = "\n\n".join(user_parts)
-
         return self.SYSTEM_PROMPT, user_message
+
+    def _format_context_from_observations(self, state: AgentState) -> str:
+        all_results: list[SearchResult] = []
+        for obs in state.observations:
+            if obs.tool_name != "search_knowledge":
+                continue
+            result = obs.result
+            if not result.success:
+                continue
+            if isinstance(result.data, list):
+                for item in result.data:
+                    if isinstance(item, SearchResult):
+                        all_results.append(item)
+
+        if not all_results:
+            return ""
+
+        return self.prompt_builder._format_context(all_results)
 
     def _format_history(self) -> str:
         messages = self.memory.get_messages()
