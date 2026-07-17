@@ -3,6 +3,7 @@
 使用 pydantic-settings 从 .env 文件加载配置，提供类型安全和校验
 """
 
+import os
 from pydantic_settings import BaseSettings
 from pydantic import Field
 from pathlib import Path
@@ -10,6 +11,11 @@ from pathlib import Path
 
 class Settings(BaseSettings):
     """应用全局配置，所有配置项从环境变量或 .env 文件加载"""
+
+    # ── HuggingFace 镜像 ───────────────────────
+    hf_endpoint: str = Field(
+        default="https://hf-mirror.com", alias="HF_ENDPOINT"
+    )
 
     # ── 语雀 API ──────────────────────────────
     yuque_token: str = Field(
@@ -59,3 +65,7 @@ class Settings(BaseSettings):
 
 # 全局单例，其他模块直接 import 使用
 settings = Settings()
+
+# 注入到系统环境变量，让 huggingface_hub / sentence-transformers 读到镜像地址
+if settings.hf_endpoint:
+    os.environ["HF_ENDPOINT"] = settings.hf_endpoint
