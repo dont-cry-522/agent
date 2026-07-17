@@ -145,11 +145,11 @@ class Agent:
         llm: DeepSeekLLM | None = None,
         prompt_builder: PromptBuilder | None = None,
     ):
-        self.memory = memory or ConversationMemory()
-        self.planner = planner or RuleBasedPlanner()
-        self.tool_manager = tool_manager or ToolManager()
+        self.memory = memory if memory is not None else ConversationMemory()
+        self.planner = planner if planner is not None else RuleBasedPlanner()
+        self.tool_manager = tool_manager if tool_manager is not None else ToolManager()
         self.llm = llm
-        self.prompt_builder = prompt_builder or PromptBuilder()
+        self.prompt_builder = prompt_builder if prompt_builder is not None else PromptBuilder()
         self._last_state: AgentState | None = None
 
     # ── 主入口 ───────────────────────────────
