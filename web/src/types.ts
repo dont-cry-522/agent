@@ -13,6 +13,7 @@ export interface SearchResultItem {
 export interface ChatResponse {
   question: string
   answer: string
+  conversation_id: string
   rewritten_query: string
   citations: SearchResultItem[]
   retrieval_ms: number
@@ -53,6 +54,27 @@ export interface StatsResponse {
   chunk_count: number
   total_size: number
   index_size_bytes: number
+}
+
+export interface ConversationItem {
+  id: string
+  title: string
+  message_count: number
+  updated_at: string
+}
+
+export interface MessageItem {
+  id: string
+  role: string
+  content: string
+  created_at: string
+}
+
+export interface ConversationDetail {
+  id: string
+  title: string
+  messages: MessageItem[]
+  updated_at: string
 }
 
 export type StreamStatus = 'idle' | 'thinking' | 'searching' | 'generating' | 'done' | 'error'

@@ -1,12 +1,12 @@
-import type { ChatResponse, DocumentItem, StatsResponse } from './types'
+import type { ChatResponse, DocumentItem, StatsResponse, ConversationItem, ConversationDetail } from './types'
 
 const BASE = '/api'
 
-export async function sendMessage(question: string): Promise<ChatResponse> {
+export async function sendMessage(question: string, conversationId: string): Promise<ChatResponse> {
   const res = await fetch(`${BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, rerank: true }),
+    body: JSON.stringify({ question, conversation_id: conversationId, rerank: true }),
   })
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`)
@@ -50,4 +50,21 @@ export async function getStats(): Promise<StatsResponse> {
   const res = await fetch(`${BASE}/stats`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
+}
+
+export async function listConversations(): Promise<ConversationItem[]> {
+  const res = await fetch(`${BASE}/conversations`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function getConversation(id: string): Promise<ConversationDetail> {
+  const res = await fetch(`${BASE}/conversations/${id}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/conversations/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
 }

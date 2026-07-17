@@ -7,17 +7,35 @@ type Page = 'chat' | 'documents'
 
 export default function App() {
   const [page, setPage] = useState<Page>('chat')
+  const [currentConvId, setCurrentConvId] = useState('')
   const [chatKey, setChatKey] = useState(0)
 
   const handleNewChat = () => {
     setPage('chat')
+    setCurrentConvId('')
+    setChatKey((k) => k + 1)
+  }
+
+  const handleSelectConversation = (id: string) => {
+    setPage('chat')
+    setCurrentConvId(id)
     setChatKey((k) => k + 1)
   }
 
   return (
     <div className="flex h-full bg-white">
-      <Sidebar onNewChat={handleNewChat} currentPage={page} onNavigate={setPage} />
-      {page === 'chat' ? <ChatArea key={chatKey} /> : <DocumentsPage />}
+      <Sidebar
+        onNewChat={handleNewChat}
+        onSelectConversation={handleSelectConversation}
+        currentConvId={currentConvId}
+        currentPage={page}
+        onNavigate={setPage}
+      />
+      {page === 'chat' ? (
+        <ChatArea key={chatKey} conversationId={currentConvId} />
+      ) : (
+        <DocumentsPage />
+      )}
     </div>
   )
 }

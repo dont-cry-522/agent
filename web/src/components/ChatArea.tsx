@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import type { Message, SearchResultItem, TokenUsage, StreamStatus } from '../types'
+import { getConversation } from '../api'
 import CitationPanel from './CitationPanel'
 
 const API_BASE = '/api'
@@ -13,7 +14,11 @@ const EXAMPLE_QUESTIONS = [
   'Python 异步编程的核心概念',
 ]
 
-export default function ChatArea() {
+interface ChatAreaProps {
+  conversationId: string
+}
+
+export default function ChatArea({ conversationId }: ChatAreaProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [status, setStatus] = useState<StreamStatus>('idle')
@@ -21,8 +26,31 @@ export default function ChatArea() {
   const [activeCitations, setActiveCitations] = useState<SearchResultItem[]>([])
   const [rerank, setRerank] = useState(true)
   const [citationW, setCitationW] = useState(320)
+  const [convId, setConvId] = useState(conversationId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // 切换对话时加载历史
+  useEffect(() => {
+    setConvId(conversationId)
+    if (conversationId) {
+      getConversation(conversationId)
+        .then((detail) => {
+          const history: Message[] = detail.messages.map((m: { id: string; role: string; content: string; created_at: string }) => ({
+            id: m.id,
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+            timestamp: new Date(m.created_at).getTime(),
+          }))
+          setMessages(history)
+          setActiveCitations([])
+        })
+        .catch(() => setMessages([]))
+    } else {
+      setMessages([])
+      setActiveCitations([])
+    }
+  }, [conversationId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -74,7 +102,7 @@ export default function ChatArea() {
       const res = await fetch(`${API_BASE}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, rerank }),
+        body: JSON.stringify({ question: q, rerank, conversation_id: convId }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
@@ -102,6 +130,9 @@ export default function ChatArea() {
                 setStatus('generating')
                 break
               case 'done':
+                if (event.conversation_id && !convId) {
+                  setConvId(event.conversation_id)
+                }
                 finalCitations = event.citations || []
                 finalRewritten = event.rewritten_query || ''
                 finalMs = event.retrieval_ms || 0
@@ -135,7 +166,7 @@ export default function ChatArea() {
       setStatus('error')
       setStreamingText(err instanceof Error ? err.message : '请求失败')
     }
-  }, [input, status, rerank])
+  }, [input, status, rerank, convId])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
