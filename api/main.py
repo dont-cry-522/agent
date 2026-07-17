@@ -44,6 +44,7 @@ from src.embedding.provider import get_provider
 from src.llm.deepseek import DeepSeekLLM
 from src.retriever.bm25 import BM25Retriever
 from src.retriever.retriever import Retriever, SearchResult
+from src.parsers.registry import get_supported_extensions
 from src.reranker.reranker import BGEReranker
 from src.vectorstore.faiss_store import FAISSVectorStore
 
@@ -260,8 +261,13 @@ def chat_stream(request: ChatRequest):
 async def upload_document(file: UploadFile = File(...)):
     _require_agent()
 
-    if not file.filename or not file.filename.endswith(".md"):
-        raise HTTPException(status_code=400, detail="仅支持 .md 文件")
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
+    supported = get_supported_extensions()
+    if ext not in supported:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件格式: .{ext}，当前支持: {', '.join(supported)}",
+        )
 
     try:
         content = await file.read()

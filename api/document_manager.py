@@ -5,14 +5,15 @@ DocumentManager — 文档生命周期管理
 编排完整的文档处理管线：
   Upload → Parse → Chunk → Embed → FAISS + BM25 → Save
 
-所有操作复用现有模块（MarkdownImporter / DocumentChunker / BGEProvider /
+支持格式: .md .txt .pdf .docx .html
+
+所有操作复用现有模块（Parser / DocumentChunker / BGEProvider /
 FAISSVectorStore / BM25Retriever），不重新实现任何核心逻辑。
 """
 
 from __future__ import annotations
 
 import json
-import shutil
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -20,12 +21,16 @@ from pathlib import Path
 
 from src.ingestion.chunker import DocumentChunker
 from src.models.document import Document
+from src.parsers.registry import parse_file, get_supported_extensions
 from src.retriever.bm25 import BM25Retriever
 from src.vectorstore.faiss_store import FAISSVectorStore
 
 
 UPLOADS_DIR = Path("uploads")
 DOCUMENTS_FILE = Path("output/documents.json")
+
+# 拼接 glob 模式: *.md / *.pdf / *.docx / *.txt / *.html
+SUPPORTED_GLOB = [f"*.{ext}" for ext in get_supported_extensions() if ext not in ("markdown", "htm")]
 
 
 @dataclass
@@ -63,7 +68,9 @@ class DocumentManager:
     # ── 上传文档 ──────────────────────────────
 
     def upload(self, file_bytes: bytes, filename: str) -> DocRecord:
-        """上传 Markdown 文件，解析 → 分块 → 向量化 → 索引
+        """上传文件，自动识别格式 → 解析 → 分块 → 向量化 → 索引
+
+        支持: .md .txt .pdf .docx .html
 
         Args:
             file_bytes: 文件内容（字节）
@@ -74,19 +81,32 @@ class DocumentManager:
         """
         safe_name = self._sanitize_filename(filename)
         doc_id = uuid.uuid4().hex[:12]
+        ext = Path(filename).suffix.lower().lstrip(".")
 
-        # 1. 保存文件
+        # 1. 保存原始文件
         upload_path = UPLOADS_DIR / f"{doc_id}_{safe_name}"
         upload_path.write_bytes(file_bytes)
 
-        # 2. 解析为 Document
-        content = upload_path.read_text(encoding="utf-8")
+        # 2. 解析为纯文本
+        try:
+            content = parse_file(upload_path)
+        except ValueError as e:
+            upload_path.unlink()
+            raise ValueError(str(e))
+        except Exception as e:
+            upload_path.unlink()
+            raise ValueError(f"文件解析失败: {e}")
+
+        if not content.strip():
+            upload_path.unlink()
+            raise ValueError("无法从文件中提取文本内容（可能为扫描件或空文件）")
+
         document = Document(
             id=doc_id,
             title=Path(filename).stem,
             path=upload_path.name,
             content=content,
-            source="markdown",
+            source=ext,
             updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
 
@@ -115,7 +135,7 @@ class DocumentManager:
             id=doc_id,
             filename=upload_path.name,
             original_name=filename,
-            format="markdown",
+            format=ext,
             file_size=len(file_bytes),
             chunk_count=len(chunks),
         )
@@ -159,24 +179,37 @@ class DocumentManager:
     # ── 重建索引 ──────────────────────────────
 
     def rebuild_index(self) -> dict:
-        """从 uploads/ 目录全量重建索引"""
-        md_files = sorted(UPLOADS_DIR.glob("*.md"))
-        if not md_files:
+        """从 uploads/ 目录全量重建索引（支持所有格式）"""
+        all_files: list[Path] = []
+        for pattern in SUPPORTED_GLOB:
+            all_files.extend(UPLOADS_DIR.glob(pattern))
+        all_files.sort()
+
+        if not all_files:
             return {"document_count": 0, "chunk_count": 0}
 
         all_chunks: list[dict] = []
         records: list[DocRecord] = []
 
-        for filepath in md_files:
+        for filepath in all_files:
+            ext = filepath.suffix.lower().lstrip(".")
             doc_id = filepath.stem.split("_", 1)[0]
-            content = filepath.read_text(encoding="utf-8")
+
+            try:
+                content = parse_file(filepath)
+            except Exception as e:
+                print(f"   [WARN] 跳过无法解析的文件: {filepath.name} -> {e}")
+                continue
+
+            if not content.strip():
+                continue
 
             document = Document(
                 id=doc_id,
                 title=filepath.stem,
                 path=filepath.name,
                 content=content,
-                source="markdown",
+                source=ext,
                 updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
 
@@ -195,7 +228,7 @@ class DocumentManager:
                 id=doc_id,
                 filename=filepath.name,
                 original_name=filepath.name,
-                format="markdown",
+                format=ext,
                 file_size=filepath.stat().st_size,
                 chunk_count=len(chunks),
             ))

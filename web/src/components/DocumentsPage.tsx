@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import type { DocumentItem, StatsResponse } from '../types'
 import { listDocuments, uploadDocument, deleteDocument, rebuildIndex, getStats } from '../api'
 
+const ALLOWED_EXTS = ['md', 'markdown', 'txt', 'pdf', 'docx', 'html', 'htm']
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentItem[]>([])
   const [stats, setStats] = useState<StatsResponse | null>(null)
@@ -26,8 +28,9 @@ export default function DocumentsPage() {
   }, [loadData])
 
   const handleUpload = async (file: File) => {
-    if (!file.name.endsWith('.md')) {
-      setError('仅支持 .md 文件')
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    if (!ALLOWED_EXTS.includes(ext)) {
+      setError(`不支持的文件格式: .${ext}，支持: ${ALLOWED_EXTS.map(e => '.' + e).join(', ')}`)
       return
     }
     setError('')
@@ -119,7 +122,7 @@ export default function DocumentsPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".md"
+            accept=".md,.txt,.pdf,.docx,.html,.htm"
             onChange={handleFileSelect}
             className="hidden"
           />
@@ -137,8 +140,8 @@ export default function DocumentsPage() {
               <svg className="w-10 h-10 text-gray-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
-              <p className="text-sm text-gray-600 font-medium">拖拽 Markdown 文件到此处上传</p>
-              <p className="text-xs text-gray-400 mt-1">或点击选择文件 · 仅支持 .md</p>
+              <p className="text-sm text-gray-600 font-medium">拖拽文件到此处上传</p>
+              <p className="text-xs text-gray-400 mt-1">或点击选择文件 · 支持 Markdown / PDF / Word / TXT / HTML</p>
             </>
           )}
         </div>

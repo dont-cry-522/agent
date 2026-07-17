@@ -11,6 +11,11 @@ pydantic-settings>=2.5.0
 # 文档处理
 markdown>=3.7.0
 
+# 多格式文档解析（PDF / Word / HTML）
+PyMuPDF>=1.25.0
+python-docx>=1.1.0
+beautifulsoup4>=4.12.0
+
 # 文档切片（语义感知文本分割）
 langchain-text-splitters>=1.0.0
 
