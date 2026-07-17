@@ -28,7 +28,7 @@ export default function Sidebar({ onNewChat, currentPage, onNavigate }: SidebarP
   }, [currentPage])
 
   return (
-    <aside className="w-72 bg-gray-50/50 border-r border-gray-100 flex flex-col h-full shrink-0">
+    <aside className="h-full bg-gray-50/50 border-r border-gray-100 flex flex-col">
       <div className="p-3 border-b border-gray-100 space-y-2">
         <button
           onClick={onNewChat}
@@ -43,7 +43,7 @@ export default function Sidebar({ onNewChat, currentPage, onNavigate }: SidebarP
         <div className="flex rounded-lg bg-gray-100 p-0.5">
           <button
             onClick={() => onNavigate('chat')}
-            className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${
+            className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer ${
               currentPage === 'chat' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600'
             }`}
           >
@@ -51,7 +51,7 @@ export default function Sidebar({ onNewChat, currentPage, onNavigate }: SidebarP
           </button>
           <button
             onClick={() => onNavigate('documents')}
-            className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${
+            className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer ${
               currentPage === 'documents' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600'
             }`}
           >
@@ -65,7 +65,7 @@ export default function Sidebar({ onNewChat, currentPage, onNavigate }: SidebarP
           知识库
         </p>
         {documents.length === 0 ? (
-          <p className="text-xs text-gray-400 px-1 py-3">暂无文档</p>
+          <p className="text-sm text-gray-400 px-1 py-3">暂无文档</p>
         ) : (
           <ul className="space-y-0.5">
             {documents.map((doc) => (

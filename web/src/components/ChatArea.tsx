@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import type { Message, SearchResultItem, TokenUsage, StreamStatus } from '../types'
 import CitationPanel from './CitationPanel'
+import { DragHandle } from './ResizableHandle'
 
 const API_BASE = '/api'
 
@@ -15,9 +16,11 @@ const EXAMPLE_QUESTIONS = [
 
 interface ChatAreaProps {
   onMenuClick: () => void
+  citationWidth: number
+  onCitationResize: (e: React.MouseEvent) => void
 }
 
-export default function ChatArea({ onMenuClick }: ChatAreaProps) {
+export default function ChatArea({ onMenuClick, citationWidth, onCitationResize }: ChatAreaProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [status, setStatus] = useState<StreamStatus>('idle')
@@ -382,12 +385,15 @@ export default function ChatArea({ onMenuClick }: ChatAreaProps) {
         </div>
       </div>
 
-      {/* 桌面端引用面板 */}
-      <div className="hidden lg:block">
-        <CitationPanel
-          citations={activeCitations}
-          onViewSource={(c) => setActiveCitations([c])}
-        />
+      {/* 拖拽手柄 + 桌面端引用面板 */}
+      <div className="hidden lg:flex">
+        <DragHandle onMouseDown={onCitationResize} />
+        <div style={{ width: citationWidth }}>
+          <CitationPanel
+            citations={activeCitations}
+            onViewSource={(c) => setActiveCitations([c])}
+          />
+        </div>
       </div>
     </div>
   )
