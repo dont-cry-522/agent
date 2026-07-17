@@ -1,8 +1,23 @@
-# Session State — 2026-07-16
+# Session State — 2026-07-17
 
-## 当前进度
+## 今日进度
 
-### 已完成
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 5.6 | 多格式文档上传（PDF/DOCX/TXT/HTML） | ✅ |
+| Phase 5.7 | 前端响应式适配 + 引用面板拖拽 | ✅ |
+| Phase 6.1 | SQLAlchemy + SQLite 持久化层（Conversation/Message/Document） | ✅ |
+| Phase 6.2 | PersistentConversationMemory（滑动窗口 + SQLite） | ✅ |
+| Phase 6.3 | Conversation API（创建/列表/详情/删除） | ✅ |
+| Phase 6.4 | 前端多会话支持（侧栏对话列表 + 切换/删除） | ✅ |
+| Phase 6.5 | RAG Citation — LLM [1][2] 行内引用 + PromptBuilder 结构化上下文 | ✅ |
+| Phase 6.6 | 文档管理 SQLite 化（DocumentRecord + DocumentRepository） | ✅ |
+| Phase 6.7 | 增量索引 — IndexIDMap + hash 去重 + 单文档更新 | ✅ |
+| Phase 6.8 | HuggingFace 镜像 + Reranker 加载容错 | ✅ |
+| Phase 6.9 | Agent `or` fallback bug 修复 | ✅ |
+| Phase 6.10 | 数据库自动迁移（新列自动 ALTER TABLE） | ✅ |
+
+## 历史已完成
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|
@@ -15,23 +30,21 @@
 | Phase 4.4 | Query Rewriting（LLM 查询改写） | ✅ |
 | Phase 4.5 | Agent Runtime（Tool / Memory / Planner / Agent 编排） | ✅ |
 | Phase 4.6 | Agent 接管系统入口 | ✅ |
-| Phase 5 | Web 重构：FastAPI + React + TypeScript + TailwindCSS + 流式输出 | ✅ |
-| Phase 5.1 | 文档管理：上传/列表/删除/增量索引/全量重建 | ✅ |
-| Phase 5.2 | 聊天优化：SSE 流式输出 + Markdown 渲染 + 代码高亮 + Token 统计 | ✅ |
+| Phase 5 | Web 重构：FastAPI + React + TypeScript + TailwindCSS + SSE 流式 | ✅ |
+| Phase 5.1 | 文档管理：上传/列表/删除/索引 | ✅ |
+| Phase 5.2 | 聊天优化：Markdown 渲染 + 代码高亮 + Token 统计 | ✅ |
 | Phase 5.3 | 部署：Dockerfile + .dockerignore + DEPLOY.md + ngrok | ✅ |
 | Phase 5.4 | 项目改名：yuque-agent → DocAgent | ✅ |
-| Phase 5.5 | README 完善 + 简历文案 | ✅ |
+| Phase 5.5 | README 完善 | ✅ |
 
-### 下一任务
+## 下一任务
 
 | 阶段 | 内容 |
 |------|------|
-| Phase 6 | 服务化：FastAPI 生产优化 + 可观测性 |
 | Phase 7 | LLM Planner 升级（替换 RuleBasedPlanner） |
 | Phase 8 | 多 Tool 扩展（Calculator / WebSearch / SQL） |
-| Phase 9 | 多 Agent 协作 |
-
----
+| Phase 9 | RAGAS 质量评估 |
+| Phase 10 | 前端多知识库选择 |
 
 ## 启动命令
 
@@ -41,24 +54,22 @@ python start.py
 
 # 开发模式（热更新）
 python start.py --dev
-
-# 面试 Demo（ngrok 暴露公网）
-python start.py          # 终端 1
-.\ngrok.exe http 8000    # 终端 2
 ```
 
 ## 环境要点
 
 | 项 | 值 |
-|---|---|
+|----|-----|
 | Python | 3.11.15 |
 | PyTorch | 2.5.1 |
 | DeepSeek API Key | sk-1afc165... (已配置) |
 | Embedding | BAAI/bge-small-zh-v1.5 (~100MB) |
 | Reranker | BAAI/bge-reranker-v2-m3 (~2.2GB, 可开关) |
+| HuggingFace 镜像 | hf-mirror.com |
 | 检索耗时 | Hybrid ~500ms, Rerank ~1s, LLM ~2s |
-| 前端 | React + Vite + TypeScript + TailwindCSS |
+| 前端 | React 19 + Vite + TypeScript + TailwindCSS |
 | 后端 | FastAPI + Agent Runtime |
+| 数据库 | SQLite (data/docagent.db) |
 | 项目名 | DocAgent |
 | GitHub | github.com/dont-cry-522/DocAgent |
 
