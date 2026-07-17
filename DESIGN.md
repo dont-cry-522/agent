@@ -570,5 +570,85 @@ Phase 5 (待定): 质量闭环
   RAGAS 评估 + Token 管理 + Prompt 版本管理
 
 Phase 6 (待定): 服务化
-  FastAPI + 流式输出 + 可观测性
+   FastAPI + 流式输出 + 可观测性
+
+---
+
+## 四、v2.1 设计决策（2026-07-17）
+
+### Q14：为什么选择 SQLite 而不是 JSON 文件？
+
+**答案：数据完整性、查询能力、升级路径。**
+
+JSON 文件方案的核心问题：
+- 写一半崩溃 → 文件损坏，全部数据丢失
+- 查最近 N 条 → 必须全量加载到内存
+- 100 个对话 → 100 个 JSON 文件，文件系统爆炸
+
+SQLite 方案的优势：
+- **事务（ACID）**：写操作要么全成功要么全回滚，断电不丢数据
+- **查询**：SELECT + WHERE + ORDER BY + LIMIT，不加载不必要的数据
+- **零配置**：Python 标准库内置 sqlite3，无额外依赖
+- **升级**：表结构不变直接换 PostgreSQL（SQLAlchemy 透明切换）
+
+### Q15：为什么 FAISS 要从 IndexFlatIP 迁移到 IndexIDMap？
+
+**答案：IndexFlatIP 不支持按 ID 删除向量。**
+
+删除一个文档的 Chunk 时：
+- `IndexFlatIP`：只能重建整个索引，N 个文档需 N 次 Embedding
+- `IndexIDMap(IndexFlatIP)`：`remove_ids()` 直接移除指定 ID
+
+迁移代价：`add()` → `add_with_ids(vectors, ids)`，`search()` 不变（IndexIDMap 透明代理）。
+
+向后兼容：`load()` 时自动检测旧版 IndexFlatIP → 提取向量 → 重建为 IndexIDMap。
+
+### Q16：为什么上传文档要做 hash 去重？
+
+**答案：避免重复索引相同内容。**
+
+用户可能反复上传同一份文档。没有 hash 去重时：
+- 每次上传 → 解析 → 切片 → Embedding → 追加入 FAISS
+- 同一份文档 3 次上传 = 3 倍的重复 Chunk
+- 检索时重复内容堆满 Top-K，挤掉其他有效结果
+
+hash 去重策略：
+- 上传时计算 SHA256(原始文件字节)
+- 同名文档 → 比较 hash → 相同则直接返回已有记录，跳过索引
+- hash 不同 → 先 `remove_ids(旧文档 Chunk)` → 再 `add_with_ids(新 Chunk)`
+
+### Q17：为什么 Citation 要把 PromptBuilder._format_context 接入 Agent？
+
+**答案：让 LLM 看到结构化上下文才能输出准确定位引用。**
+
+旧的 `_format_observations` 直接 dump Tool 的文本输出：
+```
+[search_knowledge] 找到 5 条相关文档:
+  1. 语雀 [Score: 0.623]
+     MCP 全称 Model Context Protocol...
+```
+
+LLM 看到的是扁平文本，不知道哪条对应哪个引用号。
+
+新的 `_format_context_from_observations` → `PromptBuilder._format_context`：
+```
+[参考 1]
+章节: MCP 核心概念
+文档: 语雀
+路径: 语雀.md
+相关内容: MCP 全称 Model Context Protocol...
+```
+
+LLM 看到 `[参考 1]` 就知道引用 `[1]`，API 返回的 citations 按相同索引对应。
+
+### Q18：为什么要做数据库自动迁移？
+
+**答案：ORM 新增字段时不需要手动 ALTER TABLE。**
+
+SQLAlchemy 的 `create_all` 只创建新表，不修改已存在的表。加新列时老数据库报错。
+
+自动迁移策略：
+- `init_db()` 完成后调用 `_migrate_missing_columns()`
+- 遍历所有 ORM 模型 → 对比表已有列 → 缺的列自动 `ALTER TABLE ADD COLUMN`
+- 只加列、不删列、不改类型（安全迁移）
 ```

@@ -1,6 +1,6 @@
 # DocAgent — Enterprise Knowledge Agent
 
-> 把你的文档变成可对话的知识库。上传 Markdown / PDF / Word / TXT / HTML，像 ChatGPT 一样提问，像 Perplexity 一样引用来源。
+> 把你的文档变成可对话的知识库。上传 Markdown / PDF / Word / TXT / HTML，像 ChatGPT 一样多轮对话，像 Perplexity 一样引用来源。
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-teal)](https://fastapi.tiangolo.com)
@@ -10,44 +10,55 @@
 
 ## 这是什么
 
-**DocAgent** 是一个本地优先的企业级 RAG 知识库 Agent 系统。你上传文档，它自动解析、切片、向量化并建立索引。然后你可以用自然语言提问，系统会从知识库中检索相关内容，结合 LLM 生成带引用来源的回答。
+**DocAgent** 是一个本地优先的企业级 RAG 知识库 Agent 系统。上传文档后自动解析、切片、向量化、建立索引，然后用自然语言提问，系统检索相关内容，结合 LLM 生成带引用来源的回答。
 
-## 核心特性
+所有数据完全本地，不上传任何第三方。
 
-- **自研 Agent Runtime** — Planner → Tool → LLM 三层解耦编排，支持多工具扩展
-- **Hybrid Search 混合检索** — FAISS 向量检索 + BM25 关键词检索 + RRF 融合 + Cross-encoder 精排
-- **LLM Query Rewriting** — 口语化问题自动改写为搜索引擎优化查询，提升召回命中率
-- **SSE 流式输出** — 逐 token 实时渲染，Markdown 渲染 + 代码高亮 + 内联引用标注
-- **多格式文档** — 支持 Markdown / PDF / Word / TXT / HTML 上传，自动解析、分块、向量化、增量索引
-- **Docker 一键部署** — 本地 `python start.py` 启动，云端 Docker / Render 部署
-- **数据完全本地** — 文档不上传任何第三方，只在你的机器上运行
+## 核心能力
+
+| 能力 | 说明 |
+|------|------|
+| 多格式文档 | .md .pdf .docx .txt .html 自动解析 |
+| 混合检索 | FAISS 向量 + BM25 关键词 + RRF 融合 |
+| 精排增强 | Cross-encoder Reranker 对 Top 20 重排序 |
+| 查询改写 | LLM 自动将口语化问题改写为搜索优化查询 |
+| 行内引用 | 回答中标注 `[1][2]`，右侧面板展示来源详情 |
+| 多轮对话 | SQLite 持久化，刷新不丢历史 |
+| 对话管理 | 创建/切换/删除对话，侧栏对话列表 |
+| 增量索引 | 同名文档 hash 去重，修改不重建全部索引 |
+| 流式输出 | SSE 逐 token 渲染 + Markdown + 代码高亮 |
+| 自研 Agent | Tool / Memory / Planner 三层解耦，可扩展 |
+| 一键启动 | `python start.py`，纯 CPU 运行 |
 
 ## 架构
 
 ```
-用户文档 (md/pdf/docx/txt/html)
-     │
-     ▼
- 解析 → 分块 (RecursiveCharacterTextSplitter) + 上下文增强
-     │
-     ▼
- Chunk ──┬──→ BGE Embedding (512d) ──→ FAISS 向量索引
-         └──→ jieba 分词 + BM25 ──────→ 关键词索引
-                                              │
-用户问题 ─────────────────────────────────────┘
-     │
-     ▼
-┌────────── Agent Runtime ──────────────────────────┐
-│                                                    │
-│  Memory ─→ Planner ─→ Tool(search_knowledge)      │
-│     │         │            │                       │
-│     │         │     Retriever + Reranker           │
-│     │         │     (Hybrid Search + RRF + 精排)   │
-│     │         │            │                       │
-│     └─────────┴──────→ PromptBuilder               │
-│                           │                        │
-│                      DeepSeek API → 回答           │
-└────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         Browser (React)                          │
+│   Sidebar (对话列表/知识库) │ ChatArea │ CitationPanel (引用)    │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ HTTP REST / SSE
+┌──────────────────────────▼──────────────────────────────────────┐
+│                    FastAPI (api/main.py)                          │
+│   /api/conversations  /api/documents  /api/chat  /api/chat/stream│
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────────┐
+│                     Agent Runtime                                 │
+│   Memory ─→ Planner ─→ Tool(search_knowledge) ─→ LLM(DeepSeek)  │
+│     │                      │                           │          │
+│  SQLite                Retriever                  PromptBuilder  │
+│ (持久化)           (Hybrid + RRF)              (结构化上下文)     │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────────┐
+│                     RAG Pipeline                                  │
+│  Query → QueryRewriter → Embedding(BGE) → FAISS + BM25          │
+│                                      ↓                            │
+│                              RRF Fusion → Reranker(Cross-enc)    │
+│                                      ↓                            │
+│                              Top 5 SearchResult → LLM            │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## 快速开始
@@ -60,56 +71,105 @@ pip install -r requirements.txt
 cp .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY
 
-# 3. 启动（会自动构建前端）
-python start.py
+# 3. 准备知识文档（可选，也可启动后通过页面上传）
+mkdir knowledge
+cp your-docs/*.md knowledge/
 
+# 4. 构建索引（可选，也可启动后通过页面上传）
+python scripts/import_markdown.py
+python scripts/build_chunks.py
+python scripts/build_index.py
+
+# 5. 启动
+python start.py
 # 浏览器打开 http://127.0.0.1:8000
 ```
 
-> 首次运行需要下载 Embedding 模型（约 100MB），之后直接启动。
+> 首次运行需下载 Embedding 模型 (~100MB)，之后直接启动。国内自动使用 hf-mirror.com 镜像。
 
 ## 开发模式
 
 ```bash
-# 后端 + 前端热更新
 python start.py --dev
-# 前端 → http://localhost:5173
+# 前端 → http://localhost:5173 (热更新)
 # 后端 → http://127.0.0.1:8000
 ```
 
 ## 技术栈
 
 | 层 | 技术 |
-|---|---|
-| 前端 | React + TypeScript + Vite + TailwindCSS |
-| 后端 | Python + FastAPI |
-| Agent Runtime | 自研（Tool / Memory / Planner 三层抽象） |
-| 文档解析 | LangChain TextSplitter + PyMuPDF + python-docx + BeautifulSoup |
-| Embedding | BAAI/bge-small-zh-v1.5（512d，本地 CPU） |
-| 向量检索 | FAISS（IndexFlatIP，余弦相似度） |
-| 关键词检索 | BM25 + jieba 中文分词 |
-| 精排 | BAAI/bge-reranker-v2-m3（Cross-encoder） |
+|----|------|
+| 前端 | React 19 + TypeScript + Vite + TailwindCSS + react-markdown |
+| 后端 | Python 3.11 + FastAPI + uvicorn |
+| 数据库 | SQLite + SQLAlchemy 2.0 |
+| Agent Runtime | 自研（Tool/Memory/Planner 三层抽象） |
+| 文档解析 | PyMuPDF + python-docx + BeautifulSoup + LangChain TextSplitter |
+| Embedding | BAAI/bge-small-zh-v1.5 (512d, CPU) |
+| 向量检索 | FAISS IndexIDMap(IndexFlatIP) |
+| 关键词检索 | BM25 (rank-bm25) + jieba 分词 |
+| RRF 融合 | Reciprocal Rank Fusion (k=60) |
+| 精排 | BAAI/bge-reranker-v2-m3 (Cross-encoder, 可关闭) |
 | LLM | DeepSeek Chat API |
-| 部署 | Docker + Render / ngrok |
+| 部署 | Docker / Render / ngrok |
+
+## 目录结构
+
+```
+DocAgent/
+├── api/                    # FastAPI 服务层
+│   ├── main.py             # 路由入口 (14 个端点)
+│   ├── schemas.py          # Pydantic 请求/响应模型
+│   └── document_manager.py # 文档生命周期管理
+├── src/                    # 核心库
+│   ├── config.py           # 配置管理 (pydantic-settings)
+│   ├── agent/              # Agent Runtime
+│   │   ├── agent.py        #   编排核心
+│   │   ├── tool.py         #   Tool 抽象 + ToolManager
+│   │   ├── memory.py       #   Memory(ABC) + 持久化实现
+│   │   ├── planner.py      #   Planner(ABC) + 规则实现
+│   │   └── query_rewriter.py # 查询改写
+│   ├── retriever/          # 检索器
+│   │   ├── retriever.py    #   Hybrid Search + RRF
+│   │   └── bm25.py         #   BM25 关键词检索
+│   ├── reranker/           # Cross-encoder 精排
+│   ├── embedding/          # BGE Embedding 模型
+│   ├── vectorstore/        # FAISS 向量索引
+│   ├── ingestion/          # 文档切片器
+│   ├── prompt/             # Prompt 构建器
+│   ├── llm/                # DeepSeek API 客户端
+│   ├── parsers/            # 多格式文档解析器
+│   ├── models/             # Document/Chunk 数据模型
+│   ├── importers/          # 数据源导入器
+│   └── yuque/              # 语雀 API 客户端（预留）
+├── storage/                # 持久化层
+│   ├── database.py         # SQLite 引擎 + 自动迁移
+│   ├── models.py           # ORM 模型
+│   └── repository.py       # CRUD Repository
+├── web/                    # React 前端
+│   └── src/components/     # ChatArea/Sidebar/CitationPanel/DocumentsPage
+├── scripts/                # CLI 工具
+│   ├── build_index.py      # 构建 FAISS 索引
+│   ├── build_chunks.py     # 文档切片
+│   ├── import_markdown.py  # Markdown 导入
+│   ├── search.py           # 语义检索
+│   └── chat.py             # CLI 聊天
+├── knowledge/              # 本地 Markdown 知识库
+├── uploads/                # 用户上传文件
+├── output/                 # FAISS 索引 + metadata
+├── data/                   # SQLite 数据库
+└── tests/                  # 测试
+```
 
 ## 文档
 
 | 文件 | 内容 |
 |------|------|
 | [GUIDE.md](./GUIDE.md) | 安装、配置、使用手册 |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 整体架构与设计原则 |
 | [DESIGN.md](./DESIGN.md) | 设计决策与优化记录 |
-| [PRODUCT_DESIGN.md](./PRODUCT_DESIGN.md) | 产品设计方案 |
-| [DEPLOY.md](./DEPLOY.md) | 部署指南（Docker / Render） |
-| [SESSION.md](./SESSION.md) | 开发进度日志 |
-
-## 面试 demo
-
-```bash
-python start.py              # 终端 1：启动服务
-.\ngrok.exe http 8000        # 终端 2：暴露公网
-```
-
-把 ngrok 显示的 `https://xxx.ngrok-free.app` 发给面试官即可。
+| [API.md](./API.md) | REST API 文档 |
+| [DEPLOY.md](./DEPLOY.md) | 部署指南 |
+| [CHANGELOG.md](./CHANGELOG.md) | 版本演进 |
 
 ## License
 
